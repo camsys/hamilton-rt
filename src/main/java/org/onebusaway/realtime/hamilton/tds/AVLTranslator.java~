@@ -1,0 +1,512 @@
+package org.onebusaway.realtime.hamilton.tds;
+
+import java.sql.Timestamp;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Calendar;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.List;
+import java.util.TimeZone;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
+import org.onebusaway.geospatial.model.CoordinateBounds;
+import org.onebusaway.gtfs.model.Agency;
+import org.onebusaway.gtfs.model.AgencyAndId;
+import org.onebusaway.gtfs.model.calendar.ServiceDate;
+import org.onebusaway.realtime.hamilton.model.AVLRecord;
+import org.onebusaway.realtime.hamilton.model.VehicleRecord;
+import org.onebusaway.transit_data.model.AgencyWithCoverageBean;
+import org.onebusaway.transit_data.model.ArrivalAndDepartureBean;
+import org.onebusaway.transit_data.model.ArrivalsAndDeparturesQueryBean;
+import org.onebusaway.transit_data.model.ListBean;
+import org.onebusaway.transit_data.model.RouteBean;
+import org.onebusaway.transit_data.model.RoutesBean;
+import org.onebusaway.transit_data.model.SearchQueryBean;
+import org.onebusaway.transit_data.model.SearchQueryBean.EQueryType;
+import org.onebusaway.transit_data.model.StopBean;
+import org.onebusaway.transit_data.model.StopWithArrivalsAndDeparturesBean;
+import org.onebusaway.transit_data.model.StopsForRouteBean;
+import org.onebusaway.transit_data.model.StopsWithArrivalsAndDeparturesBean;
+import org.onebusaway.transit_data.model.TripStopTimeBean;
+import org.onebusaway.transit_data.model.TripStopTimesBean;
+import org.onebusaway.transit_data.model.trips.TripBean;
+import org.onebusaway.transit_data.model.trips.TripDetailsBean;
+import org.onebusaway.transit_data.model.trips.TripDetailsInclusionBean;
+import org.onebusaway.transit_data.model.trips.TripDetailsQueryBean;
+import org.onebusaway.transit_data.model.trips.TripsForAgencyQueryBean;
+import org.onebusaway.transit_data.model.trips.TripsForBoundsQueryBean;
+import org.onebusaway.transit_data.services.TransitDataService;
+import org.onebusaway.transit_data_federation.services.AgencyAndIdLibrary;
+import org.onebusaway.transit_data_federation.services.StopTimeService;
+import org.onebusaway.transit_data_federation.services.StopTimeService.EFrequencyStopTimeBehavior;
+import org.onebusaway.transit_data_federation.services.beans.TripBeanService;
+import org.onebusaway.transit_data_federation.services.beans.TripStopTimesBeanService;
+import org.onebusaway.transit_data_federation.services.blocks.BlockCalendarService;
+import org.onebusaway.transit_data_federation.services.blocks.BlockIndexService;
+import org.onebusaway.transit_data_federation.services.blocks.BlockInstance;
+import org.onebusaway.transit_data_federation.services.blocks.BlockTripInstance;
+import org.onebusaway.transit_data_federation.services.realtime.BlockLocation;
+import org.onebusaway.transit_data_federation.services.realtime.BlockLocationService;
+import org.onebusaway.transit_data_federation.services.transit_graph.BlockTripEntry;
+import org.onebusaway.transit_data_federation.services.transit_graph.StopEntry;
+import org.onebusaway.transit_data_federation.services.transit_graph.TripEntry;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+
+public class AVLTranslator {
+  private static final Logger _log = LoggerFactory.getLogger(AVLTranslator.class);
+  private static final Pattern RUN_ROUTE = Pattern.compile("(\\d+)([AIO])?");
+  private static final Pattern ROUTE_ID = Pattern.compile("(.*)_(.*):(\\d+)([AIOC]*)?");
+
+  private TransitDataService _tds;
+  private CoordinateBounds _agencyBounds;
+  private BlockCalendarService _blockCalendarService;  
+  private BlockLocationService _blockLocationService;
+  private TripBeanService _tripBeanService;
+  private TripStopTimesBeanService _tripStopTimesBeanService;
+  @Autowired
+  public void setTransitDataService(TransitDataService tds) {
+    _tds = tds;
+  }
+  @Autowired
+  public void setBlockCalendarService(BlockCalendarService bcs) {
+    _blockCalendarService = bcs;
+  }
+  @Autowired
+  public void setBlockLocationService(BlockLocationService bls) {
+    _blockLocationService = bls;
+  }
+  @Autowired
+  public void setTripBeanService(TripBeanService tbs) {
+   _tripBeanService = tbs;
+  }
+  protected TripBeanService getTripBeanService() {
+    return _tripBeanService;
+  }
+  @Autowired
+  public void setTripStopTimesBeanService(TripStopTimesBeanService tstbs) {
+    _tripStopTimesBeanService = tstbs;
+  }
+  
+  public VehicleRecord translate(AVLRecord record) {
+    VehicleRecord v = new VehicleRecord();
+    String tripStart = record.getLogonTrip();
+    List<BlockLocation> locations = getPotentialTrips(tripStart, record.getLogonRoute(), null);
+    if (locations == null || locations.isEmpty()) {
+      _log.warn("no trips for record=" + record);
+      return null;
+    }
+    
+    BlockLocation location = locations.get(0);
+    
+    v.setVehicleId("" + record.getId());
+    v.setDelay((int)location.getScheduleDeviation());
+    
+    // NO!  Prefer realtime to these
+//    v.setLat(location.getLocation().getLat());
+//    v.setLon(location.getLocation().getLon());
+    v.setLat(record.getLat());
+    v.setLon(record.getLon());
+    // TODO speed
+    //v.setSpeed()
+    v.setBearing((int)location.getLastKnownOrientation());
+    // TODO sequence
+    //v.setSeq();
+    v.setTime(new Timestamp(location.getTime()));
+    if (location.getClosestStop() != null) {
+      v.setStopId(location.getClosestStop().getStopTime().getStop().getId().toString());
+    }
+    
+    AgencyAndId tripId = location.getActiveTrip().getTrip().getId();
+    TripBean tripBean = _tripBeanService.getTripForId(tripId);
+    
+    v.setRouteId(tripBean.getRoute().getShortName());
+    v.setTripId(tripId.toString());
+    return v;
+  }
+
+  List<BlockLocation> getPotentialTrips(String tripStart, String fuzzyRunRoute, String serviceDate) {
+    _log.debug("fuzzyRunRoute=" + fuzzyRunRoute);
+    List<BlockLocation> potentials = new ArrayList<BlockLocation>();
+    if (tripStart == null || tripStart.contains("--")) return potentials;
+    long tripStartSeconds = getTripStartSeconds(tripStart);
+    long queryTime = getStartOfDayInMillis(serviceDate) + tripStartSeconds * 1000;
+    for (AgencyWithCoverageBean agency : _tds.getAgenciesWithCoverage())  {
+      String agencyId = agency.getAgency().getId();
+
+      List<BlockInstance> instances = _blockCalendarService.getActiveBlocksForAgencyInTimeRange(
+          agencyId, queryTime, queryTime);
+      //_log.debug("instances=" + instances);
+      for (BlockInstance block : instances) {
+        //_log.debug("state=" + block.getState());
+        //_log.debug("trip=" + block.getBlock().getTrips().get(0));
+        
+        
+        TripEntry trip = block.getBlock().getTrips().get(0).getTrip();
+        String routeId = trip.getRoute().getId().toString();
+        String routeName = getRouteNameFromRouteId(routeId);
+        String avlRoute = getFuzzyRoute(fuzzyRunRoute);
+        
+        //_log.debug("route=" + routeId);
+        if (routeName != null && avlRoute != null && routeName.matches(avlRoute)) {
+          _log.debug("MATCH!" + routeName);
+
+          if (block.getState().getFrequency() != null) {
+            long blockDeparture = block.getState().getFrequency().getStartTime(); 
+            if (/*tripStartSeconds == blockDeparture*/true) {
+              // we are frequency based
+              _log.error("freq:" + blockDeparture
+                  + ":" + tripStart + ":" + trip.getId() + ":" + ",r=" + routeId + "(" + routeName + ")");
+              BlockLocation location = new BlockLocation();
+              location.setActiveTrip(block.getBlock().getTrips().get(0));
+//              location.setLocation(new CoordinatePoint(x, y));
+              _log.info("MATCH-FREQ!!" + fuzzyRunRoute);
+              potentials.add(location);
+            }              
+          } else {
+            // we are schedule based
+            BlockLocation location = _blockLocationService.getScheduledLocationForBlockInstance(
+                block, queryTime);
+            if (location == null) {
+              _log.warn("no location found for fuzzyRunRoute=" + fuzzyRunRoute);
+              continue;
+            }
+            
+            long blockDeparture = location.getClosestStop().getStopTime().getDepartureTime();
+            _log.debug("location=" + location + ", blockDeparture=" + blockDeparture);
+            if (tripStartSeconds == blockDeparture) {
+              _log.info("MATCH!!" + blockDeparture + ":" + fuzzyRunRoute + ":" + tripStart);
+              potentials.add(location);
+            }
+          }
+        }
+        
+      }
+    }
+    return potentials;
+  }
+  
+  private TripDetailsBean getBlockLocationAsTripDetailsBean(BlockLocation location) {
+    TripBean trip = null;
+    BlockTripInstance blockTripInstance = location.getActiveTripInstance();
+    long serviceDate = blockTripInstance.getServiceDate();
+    BlockTripEntry blockTrip = blockTripInstance.getBlockTrip();
+    TripEntry tripEntry = blockTrip.getTrip();
+    trip = _tripBeanService.getTripForId(tripEntry.getId());
+    TripStopTimesBean stopTimes = _tripStopTimesBeanService.getStopTimesForBlockTrip(blockTripInstance);
+    String tripId = AgencyAndIdLibrary.convertToString(tripEntry.getId());
+    TripDetailsBean bean = new TripDetailsBean();
+    bean.setTripId(tripId);
+    bean.setServiceDate(serviceDate);
+    //todo frequency
+    bean.setTrip(trip);
+    bean.setSchedule(stopTimes);
+    //todo status
+    return bean;
+  }
+  ListBean<TripDetailsBean> getPotentialTripsOld(String tripStart, String fuzzyRunRoute, String serviceDate) {
+
+    String avlRoute = getFuzzyRoute(fuzzyRunRoute);
+    ListBean<TripDetailsBean> potentials = new ListBean<TripDetailsBean>();
+    potentials.setList(new ArrayList<TripDetailsBean>());
+    try {
+
+    long tripStartSeconds = getTripStartSeconds(tripStart);
+    
+    TripsForBoundsQueryBean query = new TripsForBoundsQueryBean();
+    query.setBounds(this.getAgencyBounds());
+    long queryTime = getStartOfDayInMillis(serviceDate) + tripStartSeconds * 1000;
+    //_log.debug("queryTime=" + queryTime + ", now=" + System.currentTimeMillis());
+    query.setTime(queryTime);
+    query.setMaxCount(2000);
+    
+    TripDetailsInclusionBean inclusion = query.getInclusion();
+    inclusion.setIncludeTripBean(true);
+    inclusion.setIncludeTripSchedule(true);
+    inclusion.setIncludeTripStatus(true);
+    
+    ListBean<TripDetailsBean> tripDetails = _tds.getTripsForBounds(query);
+    
+    //ListBean<TripDetailsBean> tripDetails = new ListBean<TripDetailsBean>();
+    tripDetails.setList(new ArrayList<TripDetailsBean>());
+    TripsForAgencyQueryBean agencyQuery = new TripsForAgencyQueryBean();
+    agencyQuery.setInclusion(inclusion);
+    agencyQuery.setTime(queryTime-(60*1000));
+    agencyQuery.setMaxCount(2000);
+    for (AgencyWithCoverageBean agency : _tds.getAgenciesWithCoverage())  {
+      String agencyId = agency.getAgency().getId();
+      agencyQuery.setAgencyId(agencyId);
+
+      if (_tds.getTripsForAgency(agencyQuery).isLimitExceeded()) {
+        throw new RuntimeException("please refine query");
+      }
+      List<TripDetailsBean> agencyResult = _tds.getTripsForAgency(agencyQuery).getList();
+      _log.debug("looking for trips for agency=" + agencyId + ", found " + agencyResult);
+      tripDetails.getList().addAll(agencyResult);
+    }
+    
+    if (tripDetails.getList() == null || tripDetails.getList().isEmpty()) {
+      _log.debug("no trips found!");
+      return null;
+    }
+    //_log.debug("found potential trips=" + tripDetails.getList().size() + " for queryTime=" + queryTime + " and start=" + tripStartSeconds);
+    for (TripDetailsBean tdb : tripDetails.getList()) {
+      String agencyId = tdb.getTrip().getRoute().getAgency().getId();
+//      _log.debug("tdb=" + tdb.getTrip() + ", f=" + tdb.getFrequency()
+//          + ", route=" + tdb.getTrip().getRoute().getId());
+        potentials.getList().addAll(matchSchedule(tdb, tripStartSeconds, fuzzyRunRoute, avlRoute, tripStart));
+    }
+    
+    if (potentials.getList().isEmpty()) {
+      //potentials.getList().addAll(findFrequencies(tripStartSeconds, fuzzyRunRoute, avlRoute, tripStart, queryTime));
+      potentials.getList().addAll(mapFrequencies(tripStartSeconds, fuzzyRunRoute, avlRoute, tripStart, queryTime));
+    	// look for schedule
+      _log.debug("frequency potentials=" + potentials.getList());
+    } else if (potentials.getList().size() > 1) {
+      StringBuffer sb = new StringBuffer();
+      sb.append("route " + fuzzyRunRoute + " has matches ");
+      for (TripDetailsBean b : potentials.getList()) {
+        String directionId = b.getTrip().getDirectionId();
+        sb.append(b.getTripId() + ":" + directionId + ", ");
+      }
+      _log.debug(sb.toString());
+    } else {
+      _log.debug("found " + potentials.getList().size() + " potentials");
+    }
+    return potentials;
+    } catch (Throwable t) {
+      _log.error("broken:", t);
+      return null;
+    }
+ 
+ }
+  
+  // not able to lookup the tripId of frequency based trips
+  // TODO fix this
+  // TODO support calendar exceptions
+  private List<TripDetailsBean> mapFrequencies(
+      long tripStartSeconds, String fuzzyRunRoute, String avlRoute,
+      String tripStart, long queryTime) {
+    List<TripDetailsBean> potentials = new ArrayList<TripDetailsBean>();
+    String tripId = null;
+    if ("52".equals(fuzzyRunRoute)) {
+      tripId = "PAV_PAV:52C:SV01:01"; // TODO
+    } else if ("52A".equals(fuzzyRunRoute)) {
+      tripId = "PAV_PAV:52AC:SV01:01";
+    }
+    if (tripId == null) {
+      _log.debug("unmatched fuzzyRunRoute=" + fuzzyRunRoute);
+      return potentials;
+    }
+    TripDetailsQueryBean tdqb = new TripDetailsQueryBean();
+    tdqb.setTripId(tripId);
+    _log.debug("match! for trip=" + tripId);
+    ListBean<TripDetailsBean> tripDetails = _tds.getTripDetails(tdqb);
+    potentials.addAll(tripDetails.getList());
+    return potentials;
+  }
+  
+  // some rambling attempts at looking up frequencies from bundle
+  // I'm clearly missing something
+  private List<TripDetailsBean> findFrequencies(
+      long tripStartSeconds, String fuzzyRunRoute, String avlRoute,
+      String tripStart, long queryTime) {
+    List<TripDetailsBean> potentials = new ArrayList<TripDetailsBean>();
+    String agencyId = "PAV";
+    // find route for agency
+    ListBean<RouteBean> routesForAgencyId = _tds.getRoutesForAgencyId(agencyId);
+    
+    for (RouteBean routeBean : routesForAgencyId.getList()) {
+      String routeName = lookupRouteName(routeBean.getShortName());
+      if (!routeName.equals(fuzzyRunRoute)) continue;
+      
+      // find first stop for route
+      _log.debug("stops forRoute=" + routeBean.getId());
+      StopsForRouteBean stopsForRoute = _tds.getStopsForRoute(routeBean.getId());
+
+      if (stopsForRoute.getStops().isEmpty()) continue;
+      // we get back the stops in sorted order, not in stop sequence order!
+      int stopIndex = findStopIndexForRoute(stopsForRoute);
+      StopBean stopBean = stopsForRoute.getStops().get(stopIndex);
+      _log.debug("stopBean=" + stopBean.getId() + ":" + stopIndex);
+      ArrivalsAndDeparturesQueryBean adqueryBean = new ArrivalsAndDeparturesQueryBean();
+      adqueryBean.setTime(queryTime);
+      adqueryBean.setFrequencyMinutesBefore(5);
+      adqueryBean.setFrequencyMinutesAfter(5);
+      adqueryBean.setMinutesBefore(5);
+      adqueryBean.setMinutesAfter(5);
+      StopWithArrivalsAndDeparturesBean stopWithArrivalsAndDepartures = _tds.getStopWithArrivalsAndDepartures(stopBean.getId(), adqueryBean);
+      _log.debug("aadBean results=" + stopWithArrivalsAndDepartures.getArrivalsAndDepartures().size());
+      for (ArrivalAndDepartureBean aadBean : stopWithArrivalsAndDepartures.getArrivalsAndDepartures()) {
+        _log.debug("btsequence=" + aadBean.getBlockTripSequence());
+        for (RouteBean rBean : aadBean.getStop().getRoutes()) {
+          _log.debug("stop" + stopBean.getId() + " serves route=" + rBean.getShortName());
+        }
+        long arrivalTime = aadBean.getScheduledArrivalTime();
+      
+        long timeFrom = queryTime;
+        long timeTo = queryTime ;
+        
+        
+        _log.debug("timeFrom=" + timeFrom + "," + "arrivalTime=" + arrivalTime + ","
+            + " timeTo=" + timeTo + " for route=" + aadBean.getTrip().getRouteShortName());
+        if (arrivalTime >= timeFrom && arrivalTime <= timeTo) {
+          
+          // if match add to potentials
+//          String tripId = aadBean.getTrip().getId();
+          String tripId = "PAV_PAV:52C:SV01:01"; // TODO
+          TripDetailsQueryBean tdqb = new TripDetailsQueryBean();
+          tdqb.setTripId(tripId);
+          _log.debug("match! for trip=" + tripId);
+          ListBean<TripDetailsBean> tripDetails = _tds.getTripDetails(tdqb);
+          potentials.addAll(tripDetails.getList());
+          _log.debug("potentials=" + potentials);
+        }
+      }
+    }
+    return potentials;
+  }
+
+  private int findStopIndexForRoute(StopsForRouteBean stopsForRoute) {
+    int i = 0;
+    for (StopBean stopBean : stopsForRoute.getStops()) {
+      if ("CAMB_1491".equals(stopBean.getId())) {
+        _log.debug("stop=" + stopBean.getId());
+        return i;
+      }
+      i++;
+    }
+    return 0;
+  }
+
+  public String lookupRouteName(String shortName) {
+    if ("O ACW".equals(shortName))
+      return "52A";
+    if ("O CW".equals(shortName))
+      return "52";
+    return shortName;
+  }
+
+  private List<TripDetailsBean> matchSchedule(TripDetailsBean tdb, long tripStartSeconds, String fuzzyRunRoute, String avlRoute, String tripStart) {
+    List<TripDetailsBean> potentials = new ArrayList<TripDetailsBean>();
+  
+  // this doesn't work; stops are sorted by numerical order, not order along route
+  List<TripStopTimeBean> stops = new ArrayList<TripStopTimeBean>(tdb.getSchedule().getStopTimes());
+  Collections.sort(stops, new Comparator<TripStopTimeBean>() {
+
+    public int compare(TripStopTimeBean arg0, TripStopTimeBean arg1) {
+      return Double.compare(arg1.getDistanceAlongTrip(), arg0.getDistanceAlongTrip());
+    }
+    
+  });
+  String stopId = stops.get(0).getStop().getId();
+  long start = stops.get(0).getArrivalTime();
+  String tripId = tdb.getTripId();
+  _log.debug("trip start(" + tripId + ")=" + tdb.getTrip().getRoute().getShortName() + ":" + start + "(" + tripStartSeconds + ")(" + stopId + ")" );
+  if (tripStartSeconds == start) {
+    RouteBean route = tdb.getTrip().getRoute();
+    _log.debug("route(" + fuzzyRunRoute + ")= " + route.getShortName() + ":" + start + ":" + route.getLongName() + ":" + route.getId() + ", stop=" + stopId + ", trip=" + tdb.getTripId());
+    if (fuzzyRunRoute == null || avlRoute.equals(route.getShortName())) {
+      _log.debug("match route(" + fuzzyRunRoute + ":" + tripStart + ")= " + route.getShortName() + ":" + start + ":" + route.getLongName() + ":" + route.getId() + ", stop=" + stopId + ", trip=" + tdb.getTripId());
+      //_log.debug("match route= " + route.getShortName() + ":" + start + ":" + route.getId());
+        potentials.add(tdb);
+    }
+  }
+  return potentials;
+}
+  
+  private String getTripDirection(String routeDirection) {
+    if (routeDirection == null) return "O";
+    if (routeDirection.equals("A")) return "I";
+    return "O";
+  }
+
+  private long getStartOfDayInMillis(String serviceDate) {
+    Calendar cal = Calendar.getInstance();
+    
+    if (serviceDate != null) {
+      int year = Integer.parseInt(serviceDate.substring(0, 4));
+      int month = Integer.parseInt(serviceDate.substring(5,7)) - 1; // month is 0 based
+      int date = Integer.parseInt(serviceDate.substring(8,10));
+      //_log.debug("serviceDate=" + year + ", " + month + ", " + date);
+      cal.set(year, month, date); 
+          
+    }
+    
+    cal.set(Calendar.HOUR, 0);
+    cal.set(Calendar.MINUTE, 0);
+    cal.set(Calendar.SECOND, 0);
+    cal.set(Calendar.MILLISECOND, 0);
+    cal.set(Calendar.AM_PM, Calendar.AM);
+    cal.setTimeZone(TimeZone.getTimeZone("Pacific/Auckland"));
+    long startOfDay = cal.getTimeInMillis();
+    //_log.debug("startOfDay=" + startOfDay + "(" + cal.getTime() + ")");
+    return startOfDay;
+  }
+
+  public long getTripStartSeconds(String s) {
+    if (s == null || s.length() != 4) {
+      _log.warn("malformed trip start=" + s);
+      return 0;
+    }
+      
+    return Integer.parseInt(s.substring(0, 2)) * 60 * 60 + Integer.parseInt(s.substring(2,4)) * 60;
+  }
+  
+  private long getServiceDateForLogonTrip(String tripStart) {
+    return System.currentTimeMillis();
+  }
+
+  public String getFuzzyRoute(String s) {
+    if (s == null) return null;
+    String fuzzy = null;
+    Matcher runRouteMatcher = RUN_ROUTE.matcher(s);
+    if (runRouteMatcher.matches()) {
+      fuzzy = runRouteMatcher.group(1);
+    }
+    return fuzzy;
+  }
+
+  public String getRouteNameFromRouteId(String s) {
+    if (s == null) return null;
+    String fuzzy = null;
+    Matcher runRouteMatcher = ROUTE_ID.matcher(s);
+    if (runRouteMatcher.matches()) {
+      fuzzy = runRouteMatcher.group(3);
+    }
+    return fuzzy;
+  }
+  
+  
+  private String getRouteDirection(String s) {
+    if (s == null) return null;
+    String fuzzy = null;
+    Matcher runRouteMatcher = RUN_ROUTE.matcher(s);
+    if (runRouteMatcher.matches() && runRouteMatcher.groupCount() > 1) {
+      fuzzy = runRouteMatcher.group(2);
+    }
+    return fuzzy;
+  }
+
+
+  private CoordinateBounds getAgencyBounds() {
+    if (_agencyBounds == null) {
+      CoordinateBounds bounds = new CoordinateBounds();
+      for (AgencyWithCoverageBean agency : _tds.getAgenciesWithCoverage()) {
+        String agencyId = agency.getAgency().getId();
+        //_log.info("agencyId=" + agencyId);
+        for (CoordinateBounds aBounds : _tds.getAgencyIdsWithCoverageArea().get(
+            agencyId)) {
+          bounds.addBounds(aBounds);
+        }
+      }
+      _agencyBounds = bounds;
+    }
+    return _agencyBounds;
+  }
+
+}
