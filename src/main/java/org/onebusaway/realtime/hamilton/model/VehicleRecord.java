@@ -1,6 +1,7 @@
 package org.onebusaway.realtime.hamilton.model;
 
 import java.sql.Timestamp;
+import java.util.ArrayList;
 
 public class VehicleRecord {
 
@@ -15,6 +16,8 @@ public class VehicleRecord {
   private String stopId;
   private String routeId;
   private String tripId;
+  private boolean isFrequency;
+  private ArrayList<StopTimeInfo> stopTimeInfos;
   
   public String getVehicleId() {
     return vehicleId;
@@ -81,5 +84,17 @@ public class VehicleRecord {
   }
   public void setTripId(String tripId) {
     this.tripId = tripId;
+  }
+  public void setFrequency(boolean b) {
+    isFrequency = b;
+  }
+  public boolean isFrequency() {
+    return isFrequency;
+  }
+  public ArrayList<StopTimeInfo> getStopTimeInfos() {
+    return stopTimeInfos;
+  }
+  public void setStopTimeInfos(ArrayList<StopTimeInfo> updates) {
+    stopTimeInfos = updates;
   }
 }

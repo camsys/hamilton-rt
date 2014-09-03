@@ -9,14 +9,19 @@ import static org.apache.commons.math.util.FastMath.toRadians;
 import java.sql.Timestamp;
 import java.util.ArrayList;
 import java.util.Calendar;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.TimeZone;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import org.onebusaway.geospatial.model.CoordinateBounds;
+import org.onebusaway.geospatial.model.CoordinatePoint;
+import org.onebusaway.geospatial.services.SphericalGeometryLibrary;
 import org.onebusaway.gtfs.model.AgencyAndId;
 import org.onebusaway.realtime.hamilton.model.AVLRecord;
+import org.onebusaway.realtime.hamilton.model.StopTimeInfo;
 import org.onebusaway.realtime.hamilton.model.TripInfo;
 import org.onebusaway.realtime.hamilton.model.VehicleRecord;
 import org.onebusaway.transit_data.model.AgencyWithCoverageBean;
@@ -25,7 +30,9 @@ import org.onebusaway.transit_data.services.TransitDataService;
 import org.onebusaway.transit_data_federation.services.beans.TripBeanService;
 import org.onebusaway.transit_data_federation.services.beans.TripStopTimesBeanService;
 import org.onebusaway.transit_data_federation.services.blocks.BlockCalendarService;
+import org.onebusaway.transit_data_federation.services.blocks.BlockGeospatialService;
 import org.onebusaway.transit_data_federation.services.blocks.BlockInstance;
+import org.onebusaway.transit_data_federation.services.blocks.ScheduledBlockLocation;
 import org.onebusaway.transit_data_federation.services.realtime.BlockLocation;
 import org.onebusaway.transit_data_federation.services.realtime.BlockLocationService;
 import org.onebusaway.transit_data_federation.services.transit_graph.StopTimeEntry;
@@ -45,6 +52,13 @@ public class AVLTranslator {
   private BlockLocationService _blockLocationService;
   private TripBeanService _tripBeanService;
   private TripStopTimesBeanService _tripStopTimesBeanService;
+  private BlockGeospatialService _geospatialService;
+  private Map<String, VehicleUpdate> updates = new HashMap<String, VehicleUpdate>();
+  
+  @Autowired
+  public void setBlockGeospatialService(BlockGeospatialService bgs) {
+    _geospatialService = bgs;
+  }
   @Autowired
   public void setTransitDataService(TransitDataService tds) {
     _tds = tds;
@@ -77,7 +91,7 @@ public class AVLTranslator {
     String tripStart = record.getLogonTrip();
     List<TripInfo> tripInfos = getPotentialTrips(tripStart, record.getLogonRoute(), null, record);
     if (tripInfos == null || tripInfos.isEmpty()) {
-      _log.debug("no trips for record=" + record);
+      _log.info("no trips for record=" + record);
       return null;
     }
    
@@ -86,7 +100,8 @@ public class AVLTranslator {
       _log.error("multiple trips for record=" + record.getLogonRoute() + ":" + record.getLogonTrip());
     BlockInstance block = tripInfo.getBlockInstance();
     BlockLocation location = tripInfo.getBlockLocation();
-    
+    v.setStopTimeInfos(tripInfo.getStopTimeInfos());
+    v.setFrequency(tripInfo.isFrequency());
     v.setVehicleId("" + record.getId());
     if (location != null) {
       v.setDelay((int)location.getScheduleDeviation());
@@ -123,18 +138,22 @@ public class AVLTranslator {
   }
 
   List<TripInfo> getPotentialTrips(String tripStart, String fuzzyRunRoute, String serviceDate, AVLRecord avlRecord) {
-    _log.debug("fuzzyRunRoute=" + fuzzyRunRoute);
+    _log.info("fuzzyRunRoute=" + fuzzyRunRoute);
     List<TripInfo> potentials = new ArrayList<TripInfo>();
     if (tripStart == null || tripStart.contains("--")) return potentials;
     long tripStartSeconds = getTripStartSeconds(tripStart);
-    long queryTime = getStartOfDayInMillis(serviceDate) + tripStartSeconds * 1000;
+    // TODO switch this back?
+    //long queryTime = getStartOfDayInMillis(serviceDate) + tripStartSeconds * 1000;
+    long queryTime = System.currentTimeMillis();
+    long queryStartTime = System.currentTimeMillis() - 60 * 60 * 1000;
+    long queryEndTime = System.currentTimeMillis() + 60 * 60 * 1000;
     for (AgencyWithCoverageBean agency : _tds.getAgenciesWithCoverage())  {
       TripInfo tripInfo = new TripInfo();
       String agencyId = agency.getAgency().getId();
 
       List<BlockInstance> instances = _blockCalendarService.getActiveBlocksForAgencyInTimeRange(
-          agencyId, queryTime, queryTime);
-      //_log.debug("instances=" + instances);
+          agencyId, queryStartTime, queryEndTime);
+      _log.info("instances[" + agencyId + "]=" + instances);
       for (BlockInstance block : instances) {
         
         TripEntry trip = block.getBlock().getTrips().get(0).getTrip();
@@ -156,42 +175,8 @@ public class AVLTranslator {
           }
           
           if (block.getState().getFrequency() != null) {
-            /*
-             * frequence based matching -- IN PROGRESS
-             */
-            long blockDeparture = block.getState().getFrequency().getStartTime();
-            
-            while (blockDeparture < tripStartSeconds) {
-              blockDeparture += block.getState().getFrequency().getHeadwaySecs();
-            }
-            _log.debug("" + tripStartSeconds + " ?= " + blockDeparture);
-            if (tripStartSeconds == blockDeparture) {
-              // we are frequency based
-              tripInfo.setBlockInstance(block);
-              tripInfo.setFrequencyEntry(block.getState().getFrequency());
-              String stopId = null;
-              double minDistanceAway = Double.POSITIVE_INFINITY;
-              for (StopTimeEntry st : trip.getStopTimes()) {
-                double distanceAway = distance(avlRecord.getLon(), avlRecord.getLat(), 
-                    st.getStop().getStopLon(), st.getStop().getStopLat());
-                if (distanceAway < minDistanceAway) {
-                  minDistanceAway = distanceAway;
-                  stopId = st.getStop().getId().toString();
-                }
-              }
-              tripInfo.setClosestStopId(stopId);
-              
-              
-              BlockLocation location = new BlockLocation();
-              location.setActiveTrip(block.getBlock().getTrips().get(0));
-              
-              _log.debug("MATCH-FREQ!!" + avlRecord.getLogonRoute() + ":" + blockDeparture
-                  + ":" + tripStart + ":" + trip.getId() + ":" + ",r=" 
-                  + routeId + "(" + routeName + ")" + " block=" + block 
-                  + ":" + trip.getDirectionId() + " (" + direction + ")");
-              
-              potentials.add(tripInfo);
-            }              
+//            getOldFrequencyTrips(potentials, tripInfo, avlRecord, block, serviceDate, tripStartSeconds);
+            geFrequencyTrips(potentials, tripInfo, avlRecord, block, serviceDate, tripStartSeconds);
           } else {
             /*
              * schedule based matching
@@ -209,7 +194,7 @@ public class AVLTranslator {
             if (tripStartSeconds == blockDeparture) {
               _log.debug("MATCH!!" + avlRecord.getLogonRoute() + ":" + blockDeparture + ":" + fuzzyRunRoute + ":" + tripStart + " " + block + " direction=" + trip.getDirectionId());
               tripInfo.setBlockLocation(location);
-              potentials.add(tripInfo);
+//              potentials.add(tripInfo); // TODO ENABLE
             }
           }
         }
@@ -220,6 +205,165 @@ public class AVLTranslator {
   }
   
   
+  private void geFrequencyTrips(List<TripInfo> potentials, TripInfo tripInfo,
+      AVLRecord avlRecord, BlockInstance block, String serviceDate,
+      long tripStartSeconds) {
+    
+    // TODO prune report times older than 10 minutes
+    
+    TripEntry trip = block.getBlock().getTrips().get(0).getTrip();
+    ScheduledBlockLocation closestStopLocation = findClosestStopSequence(block, trip, avlRecord);
+    StopTimeInfo lastStu = null; 
+    if (closestStopLocation == null || closestStopLocation.getActiveTrip() == null || closestStopLocation.getNextStop() == null) {
+      _log.error("no close stops for trip=" + trip.getId().toString());
+      return;
+    }
+    int closestStopSequence = closestStopLocation.getActiveTrip().getSequence();
+    
+    int stopSeq = closestStopLocation.getStopTimeIndex();
+    
+    int blockSeq = closestStopLocation.getNextStop().getBlockSequence();
+    long blockStartTime = block.getState().getFrequency().getStartTime();
+    long blockHeadway = block.getState().getFrequency().getHeadwaySecs();
+    
+    int nextStopTimeOffset = closestStopLocation.getNextStopTimeOffset();
+    
+    
+    
+    //long arrivalTimeInSeconds = this.getStartOfDayInMillis(null)/1000 + closestStopLocation.getScheduledTime();
+    long arrivalTimeInSeconds = this.getStartOfDayInMillis(null)/1000 + blockStartTime + (blockSeq * blockHeadway) + nextStopTimeOffset;
+    String stopId = closestStopLocation.getNextStop().getStopTime().getStop().getId().toString();
+    
+    arrivalTimeInSeconds = System.currentTimeMillis() / 1000; // TODO HACK
+    
+    
+
+    if (Math.abs(arrivalTimeInSeconds * 1000 - System.currentTimeMillis()) > 35*60*1000) {
+      // block is more than 35 mins out, ignore
+      _log.info("discarting trip (nonsensical arrivalTime)=" + trip.getId().toString());
+      return;
+    }
+    
+    StopTimeInfo stu = new StopTimeInfo(stopSeq, arrivalTimeInSeconds, stopId);
+    tripInfo.addStopTimeInfos(stu);
+    lastStu = stu;
+    
+    _log.info("stop " + stopId + ", blockStart=" + hour(blockStartTime) + ", headway=" + blockHeadway 
+        + ", blockSeq=" + blockSeq + ", nextStop=" + nextStopTimeOffset + ", stopSeq(trip)=" + closestStopSequence + ", stopSeq(stop)=" + stopSeq);
+    
+    _log.info("arrivalTime[" + avlRecord.getLogonTrip() + "]=" + lastStu.getArrivalTimeInSeconds() 
+        + "(" + new java.util.Date(lastStu.getArrivalTimeInSeconds() * 1000) + ")");
+
+    tripInfo.setBlockInstance(block);
+    tripInfo.setFrequencyEntry(block.getState().getFrequency());
+
+    tripInfo.setClosestStopId(stopId);
+    tripInfo.setScheduleRelationship("UNSCHEDULED");
+    tripInfo.setFrequency(true);
+    BlockLocation location = new BlockLocation();
+    location.setActiveTrip(block.getBlock().getTrips().get(0));
+
+    
+    potentials.add(tripInfo);
+
+  }
+  private String hour(long blockDeparture) {
+    return "" + (blockDeparture/3600) + ":" + (blockDeparture/60)%60;
+  }
+  private ScheduledBlockLocation findClosestStopSequence(BlockInstance block,
+      TripEntry trip, AVLRecord avlRecord) {
+    double minDistanceAway = Double.POSITIVE_INFINITY;
+    int count = 0;
+    int stopSequence = 0;
+    double minDistanceAlongTrip = 0;
+    double distanceAlongTrip = 0;
+    double bestDistanceAway = 0;
+    String vehicleId = ""+avlRecord.getId();
+    ScheduledBlockLocation lastLocation = null;
+    
+    if (updates.containsKey(vehicleId)) {
+      VehicleUpdate vehicleUpdate = updates.get(vehicleId);
+      if (vehicleUpdate.getTripId().equals(trip.getId().toString()))
+        minDistanceAlongTrip = vehicleUpdate.getDistanceAlongTrip();
+    }
+    
+    for (StopTimeEntry st : trip.getStopTimes()) {
+      double distanceAway = SphericalGeometryLibrary.distance(avlRecord.getLat(), avlRecord.getLon(), 
+          st.getStop().getStopLat(), st.getStop().getStopLon());
+      if (distanceAway < minDistanceAway) {
+        minDistanceAway = distanceAway;
+        bestDistanceAway = distanceAway;
+         ScheduledBlockLocation blockLocation = _geospatialService.getBestScheduledBlockLocationForLocation(block, 
+            new CoordinatePoint(avlRecord.getLat(), avlRecord.getLon()), System.currentTimeMillis(), 0, block.getBlock().getTotalBlockDistance());
+         distanceAlongTrip = blockLocation.getDistanceAlongBlock();
+         // only allow this update if its progress along the trip
+           stopSequence = count;
+           lastLocation = blockLocation;
+//        _log.debug("distanceAway=" + distanceAway + " for stop " + st.getStop().getId() + "(" + stopSequence + ")");
+      }
+      count++;
+    }
+    
+    if (bestDistanceAway > 5000) return null;
+    
+    if (distanceAlongTrip > minDistanceAlongTrip) {
+      // ensure forward progress
+      VehicleUpdate vi = new VehicleUpdate(vehicleId, trip.getId().toString(), distanceAlongTrip);
+      if (lastLocation != null) {
+        _log.debug("scheduled stop=" + lastLocation.getNextStop() + " has distanceAway=" + bestDistanceAway);
+      }
+      _log.debug(vi.toString());
+      updates.put(vehicleId, vi);
+      
+      return lastLocation;
+    }
+    // nothing found
+
+    return null;
+  }
+  private void getOldFrequencyTrips(List<TripInfo> potentials,
+      TripInfo tripInfo, AVLRecord avlRecord, BlockInstance block,
+      String serviceDate, long tripStartSeconds) {
+    TripEntry trip = block.getBlock().getTrips().get(0).getTrip();
+    /*
+     * frequency based matching -- IN PROGRESS
+     */
+    long blockDeparture = block.getState().getFrequency().getStartTime();
+    
+    while (blockDeparture < tripStartSeconds) {
+      blockDeparture += block.getState().getFrequency().getHeadwaySecs();
+    }
+    _log.debug("" + tripStartSeconds + " ?= " + blockDeparture);
+    if (tripStartSeconds == blockDeparture) {
+      // we are frequency based
+      tripInfo.setBlockInstance(block);
+      tripInfo.setFrequencyEntry(block.getState().getFrequency());
+      String stopId = null;
+      double minDistanceAway = Double.POSITIVE_INFINITY;
+      for (StopTimeEntry st : trip.getStopTimes()) {
+        double distanceAway = SphericalGeometryLibrary.distance(avlRecord.getLon(), avlRecord.getLat(), 
+            st.getStop().getStopLon(), st.getStop().getStopLat());
+        if (distanceAway < minDistanceAway) {
+          minDistanceAway = distanceAway;
+          stopId = st.getStop().getId().toString();
+        }
+      }
+      tripInfo.setClosestStopId(stopId);
+      
+      
+      BlockLocation location = new BlockLocation();
+      location.setActiveTrip(block.getBlock().getTrips().get(0));
+      
+//      _log.debug("MATCH-FREQ!!" + avlRecord.getLogonRoute() + ":" + blockDeparture
+//          + ":" + tripStart + ":" + trip.getId() + ":" + ",r=" 
+//          + routeId + "(" + routeName + ")" + " block=" + block 
+//          + ":" + trip.getDirectionId() + " (" + direction + ")");
+      
+      potentials.add(tripInfo);
+    }              
+    
+    
+  }
   private String getFuzzyDirection(String s) {
     if (s == null) return null;
     if (s.endsWith("O"))
@@ -308,31 +452,27 @@ public class AVLTranslator {
     return _agencyBounds;
   }
 
-  public static final double RADIUS_OF_EARTH_IN_KM = 6371.01;
-  public static final double distance(double lat1, double lon1, double lat2,
-      double lon2) {
-    return distance(lat1, lon1, lat2, lon2, RADIUS_OF_EARTH_IN_KM * 1000);
+  private static class VehicleUpdate {
+    private String _vehicleId;
+    private String _tripId;
+    private double _distanceAlongTrip;
+    public VehicleUpdate(String vehicleId, String tripId, double distanceAlongTrip) {
+      _vehicleId = vehicleId;
+      _tripId = tripId;
+      _distanceAlongTrip = distanceAlongTrip;
+    }
+    
+    public double getDistanceAlongTrip() {
+      return _distanceAlongTrip;
+    }
+    
+    public String getTripId() {
+      return _tripId;
+    }
+    
+    public String toString() {
+      return _vehicleId+":"+_tripId + ":" + _distanceAlongTrip;
+    }
   }
-  public static final double distance(double lat1, double lon1, double lat2,
-      double lon2, double radius) {
-
-    // http://en.wikipedia.org/wiki/Great-circle_distance
-    lat1 = toRadians(lat1); // Theta-s
-    lon1 = toRadians(lon1); // Lambda-s
-    lat2 = toRadians(lat2); // Theta-f
-    lon2 = toRadians(lon2); // Lambda-f
-
-    double deltaLon = lon2 - lon1;
-
-    double y = sqrt(p2(cos(lat2) * sin(deltaLon))
-        + p2(cos(lat1) * sin(lat2) - sin(lat1) * cos(lat2) * cos(deltaLon)));
-    double x = sin(lat1) * sin(lat2) + cos(lat1) * cos(lat2) * cos(deltaLon);
-
-    return radius * atan2(y, x);
-  }
-
-  private static final double p2(double a) {
-    return a * a;
-  }
-
+  
 }

@@ -24,6 +24,7 @@ import org.onebusaway.gtfs_realtime.exporter.GtfsRealtimeLibrary;
 import org.onebusaway.gtfs_realtime.exporter.GtfsRealtimeMutableProvider;
 import org.onebusaway.gtfs_realtime.exporter.GtfsRealtimeProviderImpl;
 import org.onebusaway.realtime.hamilton.model.AVLRecord;
+import org.onebusaway.realtime.hamilton.model.StopTimeInfo;
 import org.onebusaway.realtime.hamilton.model.VehicleRecord;
 import org.onebusaway.realtime.hamilton.sql.ResultSetMapper;
 import org.onebusaway.realtime.hamilton.tds.AVLTranslator;
@@ -132,11 +133,28 @@ public class HamiltonToGtfsRealtimeService implements ServletContextAware {
   }
   
   List<AVLRecord> getAVLRecords(Connection connection) throws Exception {
-    ResultSet rs = null;
-    Statement statement = connection.createStatement(ResultSet.TYPE_SCROLL_SENSITIVE, ResultSet.CONCUR_UPDATABLE);
-    rs = statement.executeQuery(QUERY_STRING);
-    ResultSetMapper mapper = new ResultSetMapper();
-    return mapper.map(rs);
+// TODO for testing
+    //    ResultSet rs = null;
+//    Statement statement = connection.createStatement(ResultSet.TYPE_SCROLL_SENSITIVE, ResultSet.CONCUR_UPDATABLE);
+//    rs = statement.executeQuery(QUERY_STRING);
+//    ResultSetMapper mapper = new ResultSetMapper();
+//    return mapper.map(rs);
+    AVLRecord a = new AVLRecord();
+    a.setBusId(1);
+    a.setBusNumber("1");
+    a.setId(1);
+//    a.setLat(-37.752597);
+//    a.setLon(175.232833);
+    a.setLat(-37.745827);// at stop
+    a.setLon(175.229850);
+
+    a.setLogonRoute("52A");
+    a.setLogonTrip("0000");
+    a.setReportDate(new java.sql.Date(System.currentTimeMillis()));
+    a.setReportTime(new java.sql.Date(System.currentTimeMillis()));
+    ArrayList<AVLRecord> r = new ArrayList<AVLRecord>();
+    r.add(a);
+    return r;
   }
   
   List<VehicleRecord> getBlockRecords(List<AVLRecord> input) {
@@ -180,6 +198,29 @@ public class HamiltonToGtfsRealtimeService implements ServletContextAware {
     }
   }
   
+  private String cleanStopId(String stopId) {
+    String shortStopId = stopId;
+    shortStopId = shortStopId.replaceFirst("PAV_", "");
+    shortStopId = shortStopId.replaceFirst("GOBUS_", "");
+    _log.debug("shortStopId=" + stopId);
+    return shortStopId;
+  }
+  private String cleanTripId(String tripId) {
+    String shortTripId = tripId;
+    
+    shortTripId = shortTripId.replaceFirst("PAV_", "");
+//    shortTripId = shortTripId.replaceAll("GOBUS_", "");
+    _log.debug("shortTripId=" + shortTripId);
+    return shortTripId;
+  }
+
+  private String cleanRouteId(String routeId) {
+    String shortRouteId = routeId;
+    shortRouteId = shortRouteId.replaceAll("PAV_", "");
+    return shortRouteId;
+  }
+
+  
   private FeedMessage buildTripUpdates(List<VehicleRecord> records) {
     FeedMessage.Builder tripUpdates = GtfsRealtimeLibrary.createFeedMessageBuilder();
     ArrayList<StopTimeUpdate> stopTimeUpdateSet = new ArrayList<StopTimeUpdate>();
@@ -202,33 +243,52 @@ public class HamiltonToGtfsRealtimeService implements ServletContextAware {
        * StopTime Event
        */
       StopTimeEvent.Builder arrival = StopTimeEvent.newBuilder();
-      arrival.setDelay(delay);
-      arrival.setUncertainty(30);
+      
+      
       
       /**
        * StopTime Update
        */
       StopTimeUpdate.Builder stopTimeUpdate = StopTimeUpdate.newBuilder();
-      if(stopId == null){
-        continue;
-      }
-      stopTimeUpdate.setStopSequence(seq);
-      stopTimeUpdate.setStopId(stopId);
-      stopTimeUpdate.setArrival(arrival);
-      // Google requested adding departure delays for Google Transit (Issue #7).
-      // Since we don't have explicit departure delay info from OrbCAD,
-      // at the suggestion of Google we will just use arrival delay as a substitute
-      stopTimeUpdate.setDeparture(arrival);  
       
-      stopTimeUpdateSet.add(stopTimeUpdate.build());
+      if (record.isFrequency()) {
+        for (StopTimeInfo sti : record.getStopTimeInfos()) {
+//          if (sti.getStopSequence() != 0) {
+//          stopTimeUpdate.setStopSequence(sti.getStopSequence());
+//          }
+          stopTimeUpdate.setStopId(cleanStopId(sti.getStopId()));
+          arrival.setTime(System.currentTimeMillis()/1000); // TODO HACK
+          arrival.setUncertainty(300);
+          stopTimeUpdate.setArrival(arrival);
 
+          stopTimeUpdateSet.add(stopTimeUpdate.build());
+        }
+
+      } else {
+        arrival.setDelay(delay);
+        arrival.setUncertainty(30);
+        if(stopId == null){
+          continue;
+        }
+        if (seq != 0) {
+          stopTimeUpdate.setStopSequence(seq);
+        }
+        stopTimeUpdate.setStopId(cleanStopId(stopId));
+        stopTimeUpdate.setArrival(arrival);
+        // Google requested adding departure delays for Google Transit (Issue #7).
+        // Since we don't have explicit departure delay info from OrbCAD,
+        // at the suggestion of Google we will just use arrival delay as a substitute
+        stopTimeUpdate.setDeparture(arrival);  
+        
+        stopTimeUpdateSet.add(stopTimeUpdate.build());
+      }
 
       /**
        * Trip Descriptor
        */
       TripDescriptor.Builder tripDescriptor = TripDescriptor.newBuilder();
-      tripDescriptor.setTripId(tripId);
-      tripDescriptor.setRouteId(routeId);
+      tripDescriptor.setTripId(cleanTripId(tripId));
+      tripDescriptor.setRouteId(cleanRouteId(routeId));
       /**
        * Vehicle Descriptor
        */
@@ -282,7 +342,7 @@ public class HamiltonToGtfsRealtimeService implements ServletContextAware {
        * Trip Descriptor
        */
       TripDescriptor.Builder tripDescriptor = TripDescriptor.newBuilder();
-      tripDescriptor.setTripId(tripId);
+      tripDescriptor.setTripId(cleanTripId(tripId));
 
       /**
        * Vehicle Descriptor
