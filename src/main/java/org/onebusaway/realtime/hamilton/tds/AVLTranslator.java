@@ -143,17 +143,20 @@ public class AVLTranslator {
     if (tripStart == null || tripStart.contains("--")) return potentials;
     long tripStartSeconds = getTripStartSeconds(tripStart);
     // TODO switch this back?
-    //long queryTime = getStartOfDayInMillis(serviceDate) + tripStartSeconds * 1000;
-    long queryTime = System.currentTimeMillis();
-    long queryStartTime = System.currentTimeMillis() - 60 * 60 * 1000;
-    long queryEndTime = System.currentTimeMillis() + 60 * 60 * 1000;
+    long queryTime = getStartOfDayInMillis(serviceDate) + tripStartSeconds * 1000;
+//    long queryTime = System.currentTimeMillis();
+//    long queryStartTime = System.currentTimeMillis() - 60 * 60 * 1000;
+//    long queryEndTime = System.currentTimeMillis() + 60 * 60 * 1000;
     for (AgencyWithCoverageBean agency : _tds.getAgenciesWithCoverage())  {
       TripInfo tripInfo = new TripInfo();
       String agencyId = agency.getAgency().getId();
 
+//      List<BlockInstance> instances = _blockCalendarService.getActiveBlocksForAgencyInTimeRange(
+//          agencyId, queryStartTime, queryEndTime);
+//      _log.debug("instances[" + agencyId + "]=" + instances);
       List<BlockInstance> instances = _blockCalendarService.getActiveBlocksForAgencyInTimeRange(
-          agencyId, queryStartTime, queryEndTime);
-      _log.info("instances[" + agencyId + "]=" + instances);
+          agencyId, queryTime, queryTime);
+
       for (BlockInstance block : instances) {
         
         TripEntry trip = block.getBlock().getTrips().get(0).getTrip();
@@ -194,7 +197,7 @@ public class AVLTranslator {
             if (tripStartSeconds == blockDeparture) {
               _log.debug("MATCH!!" + avlRecord.getLogonRoute() + ":" + blockDeparture + ":" + fuzzyRunRoute + ":" + tripStart + " " + block + " direction=" + trip.getDirectionId());
               tripInfo.setBlockLocation(location);
-//              potentials.add(tripInfo); // TODO ENABLE
+              potentials.add(tripInfo); // TODO ENABLE
             }
           }
         }

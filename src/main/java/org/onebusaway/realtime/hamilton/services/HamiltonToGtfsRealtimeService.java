@@ -128,33 +128,31 @@ public class HamiltonToGtfsRealtimeService implements ServletContextAware {
   
   // package private for unit tests
   Connection getConnection(Map<String, String> properties) throws Exception {
-    
+    _log.info("db_url=" + properties.get(DB_URL));
     return DriverManager.getConnection(properties.get(DB_URL));
   }
   
   List<AVLRecord> getAVLRecords(Connection connection) throws Exception {
 // TODO for testing
-    //    ResultSet rs = null;
-//    Statement statement = connection.createStatement(ResultSet.TYPE_SCROLL_SENSITIVE, ResultSet.CONCUR_UPDATABLE);
-//    rs = statement.executeQuery(QUERY_STRING);
-//    ResultSetMapper mapper = new ResultSetMapper();
-//    return mapper.map(rs);
-    AVLRecord a = new AVLRecord();
-    a.setBusId(1);
-    a.setBusNumber("1");
-    a.setId(1);
-//    a.setLat(-37.752597);
-//    a.setLon(175.232833);
-    a.setLat(-37.745827);// at stop
-    a.setLon(175.229850);
-
-    a.setLogonRoute("52A");
-    a.setLogonTrip("0000");
-    a.setReportDate(new java.sql.Date(System.currentTimeMillis()));
-    a.setReportTime(new java.sql.Date(System.currentTimeMillis()));
-    ArrayList<AVLRecord> r = new ArrayList<AVLRecord>();
-    r.add(a);
-    return r;
+        ResultSet rs = null;
+    Statement statement = connection.createStatement(ResultSet.TYPE_SCROLL_SENSITIVE, ResultSet.CONCUR_UPDATABLE);
+    rs = statement.executeQuery(QUERY_STRING);
+    ResultSetMapper mapper = new ResultSetMapper();
+    return mapper.map(rs);
+//    AVLRecord a = new AVLRecord();
+//    a.setBusId(1);
+//    a.setBusNumber("1");
+//    a.setId(1);
+//    a.setLat(-37.745827);// at stop
+//    a.setLon(175.229850);
+//
+//    a.setLogonRoute("52A");
+//    a.setLogonTrip("0000");
+//    a.setReportDate(new java.sql.Date(System.currentTimeMillis()));
+//    a.setReportTime(new java.sql.Date(System.currentTimeMillis()));
+//    ArrayList<AVLRecord> r = new ArrayList<AVLRecord>();
+//    r.add(a);
+//    return r;
   }
   
   List<VehicleRecord> getBlockRecords(List<AVLRecord> input) {
