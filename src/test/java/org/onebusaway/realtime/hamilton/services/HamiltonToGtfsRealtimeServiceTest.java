@@ -121,7 +121,7 @@ public class HamiltonToGtfsRealtimeServiceTest {
   AVLRecord record = new AVLRecord();
   record.setId(87);
   record.setBusId(87);
-  record.setReportTime(new Date(System.currentTimeMillis()));
+  record.setReportTime(System.currentTimeMillis());
   record.setLat(-37.799281);
   record.setLon(175.259078);
   record.setLogonRoute("15A");

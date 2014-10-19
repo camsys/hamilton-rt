@@ -45,6 +45,8 @@ import com.google.transit.realtime.GtfsRealtime.VehicleDescriptor;
 import com.google.transit.realtime.GtfsRealtime.VehiclePosition;
 import com.google.transit.realtime.GtfsRealtime.TripUpdate.StopTimeEvent;
 import com.google.transit.realtime.GtfsRealtime.TripUpdate.StopTimeUpdate;
+import com.google.transit.realtime.GtfsRealtimeOneBusAway;
+import com.google.transit.realtime.GtfsRealtimeOneBusAway.OneBusAwayTripUpdate;
 
 public class HamiltonToGtfsRealtimeService implements ServletContextAware {
   public static final String DB_URL = "url";
@@ -60,7 +62,7 @@ public class HamiltonToGtfsRealtimeService implements ServletContextAware {
   private ScheduledExecutorService _refreshExecutor;
   private ScheduledExecutorService _delayExecutor;
   private String _url = null;
-  private int _refreshInterval = 60;
+  private int _refreshInterval = 15;
   public void setRefreshInterval(int interval) {
    _refreshInterval = interval; 
   }
@@ -133,26 +135,21 @@ public class HamiltonToGtfsRealtimeService implements ServletContextAware {
   }
   
   List<AVLRecord> getAVLRecords(Connection connection) throws Exception {
-// TODO for testing
-        ResultSet rs = null;
-    Statement statement = connection.createStatement(ResultSet.TYPE_SCROLL_SENSITIVE, ResultSet.CONCUR_UPDATABLE);
-    rs = statement.executeQuery(QUERY_STRING);
-    ResultSetMapper mapper = new ResultSetMapper();
-    return mapper.map(rs);
-//    AVLRecord a = new AVLRecord();
-//    a.setBusId(1);
-//    a.setBusNumber("1");
-//    a.setId(1);
-//    a.setLat(-37.745827);// at stop
-//    a.setLon(175.229850);
-//
-//    a.setLogonRoute("52A");
-//    a.setLogonTrip("0000");
-//    a.setReportDate(new java.sql.Date(System.currentTimeMillis()));
-//    a.setReportTime(new java.sql.Date(System.currentTimeMillis()));
-//    ArrayList<AVLRecord> r = new ArrayList<AVLRecord>();
-//    r.add(a);
-//    return r;
+    ResultSet rs = null;
+    Statement statement = null;
+    try {
+      statement = connection.createStatement(ResultSet.TYPE_SCROLL_SENSITIVE, ResultSet.CONCUR_UPDATABLE);
+      rs = statement.executeQuery(QUERY_STRING);
+      ResultSetMapper mapper = new ResultSetMapper();
+      return mapper.map(rs);
+    } finally {
+      if (rs != null) {
+        rs.close();
+      }
+      if (statement != null) {
+        statement.close();
+      }
+    }
   }
   
   List<VehicleRecord> getBlockRecords(List<AVLRecord> input) {
@@ -197,6 +194,7 @@ public class HamiltonToGtfsRealtimeService implements ServletContextAware {
   }
   
   private String cleanStopId(String stopId) {
+    if (stopId == null) return null;
     String shortStopId = stopId;
     shortStopId = shortStopId.replaceFirst("PAV_", "");
     shortStopId = shortStopId.replaceFirst("GOBUS_", "");
@@ -265,13 +263,12 @@ public class HamiltonToGtfsRealtimeService implements ServletContextAware {
       } else {
         arrival.setDelay(delay);
         arrival.setUncertainty(30);
-        if(stopId == null){
-          continue;
-        }
         if (seq != 0) {
           stopTimeUpdate.setStopSequence(seq);
         }
-        stopTimeUpdate.setStopId(cleanStopId(stopId));
+        if (stopId != null) {
+          stopTimeUpdate.setStopId(cleanStopId(stopId));
+        }
         stopTimeUpdate.setArrival(arrival);
         // Google requested adding departure delays for Google Transit (Issue #7).
         // Since we don't have explicit departure delay info from OrbCAD,
@@ -297,6 +294,11 @@ public class HamiltonToGtfsRealtimeService implements ServletContextAware {
       
       TripUpdate.Builder tripUpdate = TripUpdate.newBuilder();
       tripUpdate.addAllStopTimeUpdate(stopTimeUpdateSet);
+
+      OneBusAwayTripUpdate.Builder obaTripUpdate = OneBusAwayTripUpdate.newBuilder();
+      obaTripUpdate.setDelay(delay);
+
+      tripUpdate.setExtension(GtfsRealtimeOneBusAway.obaTripUpdate, obaTripUpdate.build());
       stopTimeUpdateSet.clear();
       tripUpdate.setTrip(tripDescriptor);
       if(vehicleId!=null && !vehicleId.isEmpty()) {
@@ -306,6 +308,7 @@ public class HamiltonToGtfsRealtimeService implements ServletContextAware {
       FeedEntity.Builder tripUpdateEntity = FeedEntity.newBuilder();
       tripUpdateEntity.setId(TRIP_UPDATE_PREFIX+tripId);
       tripUpdateEntity.setTripUpdate(tripUpdate);
+      
       tripUpdates.addEntity(tripUpdateEntity);
 
     }
@@ -335,7 +338,7 @@ public class HamiltonToGtfsRealtimeService implements ServletContextAware {
       } else {
         continue;
       }
-
+      
       /**
        * Trip Descriptor
        */

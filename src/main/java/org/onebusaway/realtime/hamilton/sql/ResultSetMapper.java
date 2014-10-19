@@ -13,7 +13,7 @@ public class ResultSetMapper {
     ArrayList<AVLRecord> data = new ArrayList<AVLRecord>();
     while (rs.next()) {
       AVLRecord avl = readRow(rs);
-      if (avl != null) {
+      if (avl != null && avl.isValid()) {
         data.add(avl);
       }
     }
@@ -24,7 +24,7 @@ public class ResultSetMapper {
     AVLRecord avl = new AVLRecord();
     avl.setId(rs.getInt(1));
     avl.setBusId(rs.getInt(2));
-    avl.setReportTime(rs.getDate(3));
+    avl.setReportTime(parseTime(rs.getString(3)));
     avl.setLat(rs.getDouble(4));
     avl.setLon(rs.getDouble(5));
     avl.setLogonRoute(rs.getString(6));
@@ -32,6 +32,16 @@ public class ResultSetMapper {
     avl.setBusNumber(rs.getString(8));
     avl.setReportDate(rs.getDate(9));
     return avl;
+  }
+
+  private long parseTime(String time) {
+    if (time != null) {
+      int hour = Integer.parseInt(time.substring(0, 2));
+      int minute = Integer.parseInt(time.substring(3,5));
+      int second = Integer.parseInt(time.substring(6,8));
+      return (hour * 60 * 60) + (minute * 60) + second;
+    }
+    return 0;
   }
   
 }

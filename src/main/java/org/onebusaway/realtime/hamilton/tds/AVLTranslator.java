@@ -35,6 +35,7 @@ import org.onebusaway.transit_data_federation.services.blocks.BlockInstance;
 import org.onebusaway.transit_data_federation.services.blocks.ScheduledBlockLocation;
 import org.onebusaway.transit_data_federation.services.realtime.BlockLocation;
 import org.onebusaway.transit_data_federation.services.realtime.BlockLocationService;
+import org.onebusaway.transit_data_federation.services.transit_graph.BlockTripEntry;
 import org.onebusaway.transit_data_federation.services.transit_graph.StopTimeEntry;
 import org.onebusaway.transit_data_federation.services.transit_graph.TripEntry;
 import org.slf4j.Logger;
@@ -91,8 +92,15 @@ public class AVLTranslator {
     String tripStart = record.getLogonTrip();
     List<TripInfo> tripInfos = getPotentialTrips(tripStart, record.getLogonRoute(), null, record);
     if (tripInfos == null || tripInfos.isEmpty()) {
-      _log.info("no trips for record=" + record);
-      return null;
+      if (record.isValid()) {
+        _log.debug("no potential trips for record=" + record);
+        tripInfos = getActiveTrips(record);
+        if (tripInfos == null || tripInfos.isEmpty()) {
+          _log.error("no active trips for record=" + record);
+          return null;
+        }
+      }
+      
     }
    
     TripInfo tripInfo = tripInfos.get(0);
@@ -109,6 +117,7 @@ public class AVLTranslator {
       v.setTime(new Timestamp(location.getTime()));
     } else {
       v.setTime(new Timestamp(System.currentTimeMillis()));
+      v.setDelay(3);
     }
     
     v.setLat(record.getLat());
@@ -117,28 +126,81 @@ public class AVLTranslator {
     if (location != null && location.getClosestStop() != null) {
       String stopId = location.getClosestStop().getStopTime().getStop().getId().toString();
       v.setStopId(stopId);
-      _log.debug("stopId=" + v.getStopId());
+      v.setSeq(location.getActiveTrip().getTrip().getStopTimes().size()-1);
+      _log.debug("using closest stop of " + v.getStopId());
     } else {
       v.setStopId(tripInfo.getClosestStopId());
     }
-    
+
     if (location != null) {
       AgencyAndId tripId = location.getActiveTrip().getTrip().getId();
       TripBean tripBean = _tripBeanService.getTripForId(tripId);
-
+      
       v.setRouteId(tripBean.getRoute().getShortName());
       v.setTripId(tripId.toString());
+      v.setBlockId(location.getBlockInstance().getBlock().getBlock().getId().toString());
+      
+      if (v.getStopId() == null) {
+        List<StopTimeEntry> stopTimes = location.getActiveTrip().getTrip().getStopTimes();
+        v.setStopId(stopTimes.get(stopTimes.size()-1).getStop().getId().toString());
+        v.setSeq(stopTimes.size()-1);
+      }
+      
     } else {
       TripEntry trip = block.getBlock().getTrips().get(0).getTrip();
+      
+      if (v.getStopId() == null) {
+        List<StopTimeEntry> stopTimes = trip.getStopTimes();
+        v.setStopId(stopTimes.get(stopTimes.size()-1).getStop().getId().toString());
+        v.setSeq(stopTimes.size()-1);
+      }
+
+      
       String routeId = trip.getRoute().getId().toString();
       v.setRouteId(routeId);
       v.setTripId(trip.getId().toString());
+      v.setBlockId(trip.getBlock().getId().toString());
     }
     return v;
   }
 
+  // we were not able to match the exact trip
+  // fall back on any active trips that match the route
+  private List<TripInfo> getActiveTrips(AVLRecord record) {
+    List<TripInfo> potentials = new ArrayList<TripInfo>();
+
+    long queryStartTime = System.currentTimeMillis() - 60 * 1000;
+    long queryEndTime = System.currentTimeMillis() + 60 * 1000;
+
+    for (AgencyWithCoverageBean agency : _tds.getAgenciesWithCoverage())  {
+      TripInfo tripInfo = new TripInfo();
+      String agencyId = agency.getAgency().getId();
+
+      List<BlockInstance> instances = _blockCalendarService.getActiveBlocksForAgencyInTimeRange(
+          agencyId, queryStartTime, queryEndTime);
+
+      for (BlockInstance block : instances) {
+      
+        for (BlockTripEntry blockTrip : block.getBlock().getTrips()) {
+          TripEntry trip = blockTrip.getTrip();
+          String routeId = trip.getRoute().getId().toString();
+          String routeName = getRouteNameFromRouteId(routeId);
+          String direction = getFuzzyDirection(record.getLogonRoute());
+          String avlRoute = getFuzzyRoute(record.getLogonRoute());
+          
+          if (routeName != null && avlRoute != null && routeName.matches(avlRoute)) {
+//            _log.info("matching trip=" + avlRoute + " direction=" + direction + "=?" + trip.getDirectionId());
+              tripInfo.setBlockInstance(block);
+              potentials.add(tripInfo);
+          }
+        }
+      }
+    }
+    return potentials;
+    
+  }
   List<TripInfo> getPotentialTrips(String tripStart, String fuzzyRunRoute, String serviceDate, AVLRecord avlRecord) {
-    _log.info("fuzzyRunRoute=" + fuzzyRunRoute);
+//    _log.info("fuzzyRunRoute=" + fuzzyRunRoute);
     List<TripInfo> potentials = new ArrayList<TripInfo>();
     if (tripStart == null || tripStart.contains("--")) return potentials;
     long tripStartSeconds = getTripStartSeconds(tripStart);
@@ -147,15 +209,17 @@ public class AVLTranslator {
 //    long queryTime = System.currentTimeMillis();
 //    long queryStartTime = System.currentTimeMillis() - 60 * 60 * 1000;
 //    long queryEndTime = System.currentTimeMillis() + 60 * 60 * 1000;
+//    _log.error("agencies=" + _tds.getAgenciesWithCoverage());
     for (AgencyWithCoverageBean agency : _tds.getAgenciesWithCoverage())  {
       TripInfo tripInfo = new TripInfo();
       String agencyId = agency.getAgency().getId();
 
 //      List<BlockInstance> instances = _blockCalendarService.getActiveBlocksForAgencyInTimeRange(
 //          agencyId, queryStartTime, queryEndTime);
-//      _log.debug("instances[" + agencyId + "]=" + instances);
+//      _log.error("instances[" + agencyId + "]=" + instances);
       List<BlockInstance> instances = _blockCalendarService.getActiveBlocksForAgencyInTimeRange(
           agencyId, queryTime, queryTime);
+      
 
       for (BlockInstance block : instances) {
         

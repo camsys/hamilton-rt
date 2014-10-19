@@ -1,12 +1,19 @@
 package org.onebusaway.realtime.hamilton.model;
 
 import java.sql.Date;
+import java.util.Calendar;
+import java.util.TimeZone;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public class AVLRecord {
 
+  private static final Logger _log = LoggerFactory.getLogger(AVLRecord.class);
+  
   private int id;
   private int busId;
-  private Date reportTime;
+  private long reportTime;
   private double lat;
   private double lon;
   private String logonRoute;
@@ -26,10 +33,10 @@ public class AVLRecord {
   public void setBusId(int busId) {
     this.busId = busId;
   }
-  public Date getReportTime() {
+  public long getReportTime() {
     return reportTime;
   }
-  public void setReportTime(Date reportTime) {
+  public void setReportTime(long reportTime) {
     this.reportTime = reportTime;
   }
   public double getLat() {
@@ -81,6 +88,28 @@ public class AVLRecord {
         + getReportDate() 
         + ")";
         
+  }
+  public boolean isValid() {
+    return
+        !"--".equals(getLogonTrip())
+        && isRecent(""+getId(), getReportTime()); 
+  }
+  private boolean isRecent(String id, long time) {
+    long now = (System.currentTimeMillis() - startOfDay())/1000; 
+//    _log.error("id= " + id + ", now=" + now + " ?= " + time);
+    return Math.abs(now - time) < 1000; 
+  }
+
+  private long startOfDay() {
+    Calendar cal = Calendar.getInstance();
+    cal.set(Calendar.HOUR, 0);
+    cal.set(Calendar.MINUTE, 0);
+    cal.set(Calendar.SECOND, 0);
+    cal.set(Calendar.MILLISECOND, 0);
+    cal.set(Calendar.AM_PM, Calendar.AM);
+    cal.setTimeZone(TimeZone.getTimeZone("Pacific/Auckland"));
+    long startOfDay = cal.getTimeInMillis();
+    return startOfDay;
   }
 
 }
