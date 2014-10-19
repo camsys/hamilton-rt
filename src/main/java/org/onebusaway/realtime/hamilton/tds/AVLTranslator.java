@@ -54,7 +54,7 @@ public class AVLTranslator {
   private TripBeanService _tripBeanService;
   private TripStopTimesBeanService _tripStopTimesBeanService;
   private BlockGeospatialService _geospatialService;
-  private Map<String, VehicleUpdate> updates = new HashMap<String, VehicleUpdate>();
+//  private Map<String, VehicleUpdate> updates = new HashMap<String, VehicleUpdate>();
   
   @Autowired
   public void setBlockGeospatialService(BlockGeospatialService bgs) {
@@ -150,9 +150,9 @@ public class AVLTranslator {
       TripEntry trip = block.getBlock().getTrips().get(0).getTrip();
       
       if (v.getStopId() == null) {
-        List<StopTimeEntry> stopTimes = trip.getStopTimes();
-        v.setStopId(stopTimes.get(stopTimes.size()-1).getStop().getId().toString());
-        v.setSeq(stopTimes.size()-1);
+//        List<StopTimeEntry> stopTimes = trip.getStopTimes();
+//        v.setStopId(stopTimes.get(stopTimes.size()-1).getStop().getId().toString());
+//        v.setSeq(stopTimes.size()-1);
       }
 
       
@@ -324,7 +324,7 @@ public class AVLTranslator {
     tripInfo.setBlockInstance(block);
     tripInfo.setFrequencyEntry(block.getState().getFrequency());
 
-    tripInfo.setClosestStopId(stopId);
+//    tripInfo.setClosestStopId(stopId);
     tripInfo.setScheduleRelationship("UNSCHEDULED");
     tripInfo.setFrequency(true);
     BlockLocation location = new BlockLocation();
@@ -342,17 +342,17 @@ public class AVLTranslator {
     double minDistanceAway = Double.POSITIVE_INFINITY;
     int count = 0;
     int stopSequence = 0;
-    double minDistanceAlongTrip = 0;
+//    double minDistanceAlongTrip = 0;
     double distanceAlongTrip = 0;
     double bestDistanceAway = 0;
     String vehicleId = ""+avlRecord.getId();
     ScheduledBlockLocation lastLocation = null;
     
-    if (updates.containsKey(vehicleId)) {
-      VehicleUpdate vehicleUpdate = updates.get(vehicleId);
-      if (vehicleUpdate.getTripId().equals(trip.getId().toString()))
-        minDistanceAlongTrip = vehicleUpdate.getDistanceAlongTrip();
-    }
+//    if (updates.containsKey(vehicleId)) {
+//      VehicleUpdate vehicleUpdate = updates.get(vehicleId);
+//      if (vehicleUpdate.getTripId().equals(trip.getId().toString()))
+//        minDistanceAlongTrip = vehicleUpdate.getDistanceAlongTrip();
+//    }
     
     for (StopTimeEntry st : trip.getStopTimes()) {
       double distanceAway = SphericalGeometryLibrary.distance(avlRecord.getLat(), avlRecord.getLon(), 
@@ -373,14 +373,14 @@ public class AVLTranslator {
     
     if (bestDistanceAway > 5000) return null;
     
-    if (distanceAlongTrip > minDistanceAlongTrip) {
+    if (/*distanceAlongTrip > minDistanceAlongTrip*/ true) {
       // ensure forward progress
       VehicleUpdate vi = new VehicleUpdate(vehicleId, trip.getId().toString(), distanceAlongTrip);
       if (lastLocation != null) {
         _log.debug("scheduled stop=" + lastLocation.getNextStop() + " has distanceAway=" + bestDistanceAway);
       }
       _log.debug(vi.toString());
-      updates.put(vehicleId, vi);
+//      updates.put(vehicleId, vi);
       
       return lastLocation;
     }

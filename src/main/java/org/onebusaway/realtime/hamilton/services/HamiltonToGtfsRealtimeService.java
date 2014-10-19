@@ -261,8 +261,10 @@ public class HamiltonToGtfsRealtimeService implements ServletContextAware {
         }
 
       } else {
-        arrival.setDelay(delay);
-        arrival.setUncertainty(30);
+        if (stopId != null) {
+          arrival.setDelay(delay);
+          arrival.setUncertainty(30);
+        }
         if (seq != 0) {
           stopTimeUpdate.setStopSequence(seq);
         }
@@ -275,7 +277,9 @@ public class HamiltonToGtfsRealtimeService implements ServletContextAware {
         // at the suggestion of Google we will just use arrival delay as a substitute
         stopTimeUpdate.setDeparture(arrival);  
         
-        stopTimeUpdateSet.add(stopTimeUpdate.build());
+        if (stopId != null) {
+          stopTimeUpdateSet.add(stopTimeUpdate.build());
+        }
       }
 
       /**
@@ -295,10 +299,11 @@ public class HamiltonToGtfsRealtimeService implements ServletContextAware {
       TripUpdate.Builder tripUpdate = TripUpdate.newBuilder();
       tripUpdate.addAllStopTimeUpdate(stopTimeUpdateSet);
 
-      OneBusAwayTripUpdate.Builder obaTripUpdate = OneBusAwayTripUpdate.newBuilder();
-      obaTripUpdate.setDelay(delay);
-
-      tripUpdate.setExtension(GtfsRealtimeOneBusAway.obaTripUpdate, obaTripUpdate.build());
+      if (stopId != null) {
+        OneBusAwayTripUpdate.Builder obaTripUpdate = OneBusAwayTripUpdate.newBuilder();
+        obaTripUpdate.setDelay(delay);
+        tripUpdate.setExtension(GtfsRealtimeOneBusAway.obaTripUpdate, obaTripUpdate.build());
+      }
       stopTimeUpdateSet.clear();
       tripUpdate.setTrip(tripDescriptor);
       if(vehicleId!=null && !vehicleId.isEmpty()) {
