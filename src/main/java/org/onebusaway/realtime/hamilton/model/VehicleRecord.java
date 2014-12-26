@@ -16,6 +16,7 @@ public class VehicleRecord {
   private String stopId;
   private String routeId;
   private String tripId;
+  private String blockId;
   private boolean isFrequency;
   private ArrayList<StopTimeInfo> stopTimeInfos;
   
@@ -84,6 +85,12 @@ public class VehicleRecord {
   }
   public void setTripId(String tripId) {
     this.tripId = tripId;
+  }
+  public String getBlockId() {
+    return blockId;
+  }
+  public void setBlockId(String blockId) {
+    this.blockId = blockId;
   }
   public void setFrequency(boolean b) {
     isFrequency = b;

@@ -15,7 +15,7 @@ public class ResultSetMapper {
     ArrayList<DBAVLRecord> data = new ArrayList<DBAVLRecord>();
     while (rs.next()) {
       DBAVLRecord avl = readRow(rs);
-      if (avl != null) {
+      if (avl != null && avl.isValid()) {
         data.add(avl);
       }
     }
@@ -41,10 +41,15 @@ public class ResultSetMapper {
     }
     return avl;
   }
-  
-  
-//  SimpleDateFormat sdf = new SimpleDateFormat("YYYY-MM-DD HH:mm:ss");
-//  sdf.parse(record.getReportTime())
 
+  private long parseTime(String time) {
+    if (time != null) {
+      int hour = Integer.parseInt(time.substring(0, 2));
+      int minute = Integer.parseInt(time.substring(3,5));
+      int second = Integer.parseInt(time.substring(6,8));
+      return (hour * 60 * 60) + (minute * 60) + second;
+    }
+    return 0;
+  }
   
 }
