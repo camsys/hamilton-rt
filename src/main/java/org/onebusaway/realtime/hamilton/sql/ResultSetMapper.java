@@ -1,18 +1,20 @@
 package org.onebusaway.realtime.hamilton.sql;
 
+import java.sql.Date;
 import java.sql.ResultSet;
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.List;
 
-import org.onebusaway.realtime.hamilton.model.AVLRecord;
+import org.onebusaway.realtime.hamilton.model.DBAVLRecord;
 
 public class ResultSetMapper {
-
+  private static SimpleDateFormat _sdf = new SimpleDateFormat("yyyy-MM-dd HH:mm");
   
-  public List<AVLRecord> map(ResultSet rs) throws Exception {
-    ArrayList<AVLRecord> data = new ArrayList<AVLRecord>();
+  public List<DBAVLRecord> map(ResultSet rs) throws Exception {
+    ArrayList<DBAVLRecord> data = new ArrayList<DBAVLRecord>();
     while (rs.next()) {
-      AVLRecord avl = readRow(rs);
+      DBAVLRecord avl = readRow(rs);
       if (avl != null) {
         data.add(avl);
       }
@@ -20,18 +22,29 @@ public class ResultSetMapper {
     return data;
   }
   
-  private AVLRecord readRow(ResultSet rs) throws Exception {
-    AVLRecord avl = new AVLRecord();
+  private DBAVLRecord readRow(ResultSet rs) throws Exception {
+    DBAVLRecord avl = new DBAVLRecord();
     avl.setId(rs.getInt(1));
     avl.setBusId(rs.getInt(2));
-    avl.setReportTime(rs.getDate(3));
+    avl.setReportTimeString(rs.getString(3));
     avl.setLat(rs.getDouble(4));
     avl.setLon(rs.getDouble(5));
     avl.setLogonRoute(rs.getString(6));
-    avl.setLogonTrip(rs.getString(7));
+    String logonTrip = rs.getString(7);
+    avl.setLogonTrip(logonTrip);
     avl.setBusNumber(rs.getString(8));
-    avl.setReportDate(rs.getDate(9));
+    Date reportDate = new Date(_sdf.parse(rs.getString(9) + " " + rs.getString(3)).getTime());
+    avl.setReportDate(reportDate);
+    if (logonTrip != null && logonTrip.length() > 3) {
+      reportDate = new Date(_sdf.parse(rs.getString(9) + " " + logonTrip.substring(0, 2) + ":" + logonTrip.substring(2,4)).getTime());
+      avl.setLogonTripDate(reportDate);
+    }
     return avl;
   }
+  
+  
+//  SimpleDateFormat sdf = new SimpleDateFormat("YYYY-MM-DD HH:mm:ss");
+//  sdf.parse(record.getReportTime())
+
   
 }

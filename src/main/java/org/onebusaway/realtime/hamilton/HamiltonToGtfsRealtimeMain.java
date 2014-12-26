@@ -62,12 +62,6 @@ public class HamiltonToGtfsRealtimeMain {
     _lifecycleService = lifecycleService;
   }
 
-  // private TransitDataService _tds = null;
-  // @Inject
-  // public void setTransitDataService(TransitDataService tds) {
-  //     _tds = tds;
-  // }
-
   private AVLTranslator _avl = null;
   @Inject
   public void setAVLTranslator(AVLTranslator avl) {

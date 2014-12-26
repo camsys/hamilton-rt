@@ -6,7 +6,9 @@ import static org.apache.commons.math.util.FastMath.sin;
 import static org.apache.commons.math.util.FastMath.sqrt;
 import static org.apache.commons.math.util.FastMath.toRadians;
 
+import java.sql.Date;
 import java.sql.Timestamp;
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.HashMap;
@@ -21,6 +23,8 @@ import org.onebusaway.geospatial.model.CoordinatePoint;
 import org.onebusaway.geospatial.services.SphericalGeometryLibrary;
 import org.onebusaway.gtfs.model.AgencyAndId;
 import org.onebusaway.realtime.hamilton.model.AVLRecord;
+import org.onebusaway.realtime.hamilton.model.DBAVLRecord;
+import org.onebusaway.realtime.hamilton.model.PositionReport;
 import org.onebusaway.realtime.hamilton.model.StopTimeInfo;
 import org.onebusaway.realtime.hamilton.model.TripInfo;
 import org.onebusaway.realtime.hamilton.model.VehicleRecord;
@@ -35,6 +39,8 @@ import org.onebusaway.transit_data_federation.services.blocks.BlockInstance;
 import org.onebusaway.transit_data_federation.services.blocks.ScheduledBlockLocation;
 import org.onebusaway.transit_data_federation.services.realtime.BlockLocation;
 import org.onebusaway.transit_data_federation.services.realtime.BlockLocationService;
+import org.onebusaway.transit_data_federation.services.transit_graph.BlockTripEntry;
+import org.onebusaway.transit_data_federation.services.transit_graph.FrequencyEntry;
 import org.onebusaway.transit_data_federation.services.transit_graph.StopTimeEntry;
 import org.onebusaway.transit_data_federation.services.transit_graph.TripEntry;
 import org.slf4j.Logger;
@@ -45,6 +51,10 @@ public class AVLTranslator {
   private static final Logger _log = LoggerFactory.getLogger(AVLTranslator.class);
   private static final Pattern RUN_ROUTE = Pattern.compile("(\\d+)([AIO])?");
   private static final Pattern ROUTE_ID = Pattern.compile("(.*)_(\\d+)([AIOC]*)?");
+  private static final Pattern TRIP_ID = Pattern.compile("([^_]*)_([^_]*)_(\\d+)([AIOC]*)?_([^_]*)_([^_]*)");
+  private static SimpleDateFormat _fullDate= new SimpleDateFormat("yyyy-MM-dd HH:mm");
+  private static SimpleDateFormat _date= new SimpleDateFormat("yyyy-MM-dd");
+  private static SimpleDateFormat _time= new SimpleDateFormat("HHmm");
 
   private TransitDataService _tds;
   private CoordinateBounds _agencyBounds;
@@ -86,58 +96,169 @@ public class AVLTranslator {
     _tripStopTimesBeanService = tstbs;
   }
   
-  public VehicleRecord translate(AVLRecord record) {
+  public VehicleRecord translate(DBAVLRecord record) {
     VehicleRecord v = new VehicleRecord();
-    String tripStart = record.getLogonTrip();
-    List<TripInfo> tripInfos = getPotentialTrips(tripStart, record.getLogonRoute(), null, record);
-    if (tripInfos == null || tripInfos.isEmpty()) {
-      _log.info("no trips for record=" + record);
-      return null;
-    }
-   
-    TripInfo tripInfo = tripInfos.get(0);
-    if (tripInfos.size() > 1)
-      _log.error("multiple trips for record=" + record.getLogonRoute() + ":" + record.getLogonTrip());
-    BlockInstance block = tripInfo.getBlockInstance();
-    BlockLocation location = tripInfo.getBlockLocation();
-    v.setStopTimeInfos(tripInfo.getStopTimeInfos());
-    v.setFrequency(tripInfo.isFrequency());
+//    String tripStart = record.getLogonTrip();
+//    List<TripInfo> tripInfos = getPotentialTrips(tripStart, record.getLogonRoute(), null, record);
+//    if (tripInfos == null || tripInfos.isEmpty()) {
+//      _log.info("no trips for record=" + record);
+//      return null;
+//    }
+    
+    
+    
+   String tripId = getTripStartingAt(record, System.currentTimeMillis());
+   if (tripId == null) {
+     return null;
+   }
+//    BlockInstance block = tripInfo.getBlockInstance();
+//    BlockLocation location = tripInfo.getBlockLocation();
+//    v.setStopTimeInfos(tripInfo.getStopTimeInfos());
+//    v.setFrequency(tripInfo.isFrequency());
     v.setVehicleId("" + record.getId());
-    if (location != null) {
-      v.setDelay((int)location.getScheduleDeviation());
-      v.setBearing((int)location.getLastKnownOrientation());
-      v.setTime(new Timestamp(location.getTime()));
-    } else {
-      v.setTime(new Timestamp(System.currentTimeMillis()));
-    }
+//    if (location != null) {
+//      v.setDelay((int)location.getScheduleDeviation());
+//      v.setBearing((int)location.getLastKnownOrientation());
+//      v.setTime(new Timestamp(location.getTime()));
+//    } else {
+//      v.setTime(new Timestamp(System.currentTimeMillis()));
+//    }
+    v.setTime(new Timestamp(System.currentTimeMillis()));
     
     v.setLat(record.getLat());
     v.setLon(record.getLon());
     
-    if (location != null && location.getClosestStop() != null) {
-      String stopId = location.getClosestStop().getStopTime().getStop().getId().toString();
-      v.setStopId(stopId);
-      _log.debug("stopId=" + v.getStopId());
-    } else {
-      v.setStopId(tripInfo.getClosestStopId());
-    }
+//    if (location != null && location.getClosestStop() != null) {
+//      String stopId = location.getClosestStop().getStopTime().getStop().getId().toString();
+//      v.setStopId(stopId);
+//      _log.debug("stopId=" + v.getStopId());
+//    } else {
+//      v.setStopId(tripInfo.getClosestStopId());
+//    }
     
-    if (location != null) {
-      AgencyAndId tripId = location.getActiveTrip().getTrip().getId();
-      TripBean tripBean = _tripBeanService.getTripForId(tripId);
-
-      v.setRouteId(tripBean.getRoute().getShortName());
-      v.setTripId(tripId.toString());
-    } else {
-      TripEntry trip = block.getBlock().getTrips().get(0).getTrip();
-      String routeId = trip.getRoute().getId().toString();
-      v.setRouteId(routeId);
-      v.setTripId(trip.getId().toString());
-    }
+    v.setTripId(tripId);
+    v.setStopId(findClosestStopId(record, tripId));
+//    if (location != null) {
+//      AgencyAndId tripId = location.getActiveTrip().getTrip().getId();
+//      TripBean tripBean = _tripBeanService.getTripForId(tripId);
+//
+//      v.setRouteId(tripBean.getRoute().getShortName());
+//      v.setTripId(tripId.toString());
+//    } else {
+//      TripEntry trip = block.getBlock().getTrips().get(0).getTrip();
+//      String routeId = trip.getRoute().getId().toString();
+//      v.setRouteId(routeId);
+//      v.setTripId(trip.getId().toString());
+//    }
     return v;
   }
 
-  List<TripInfo> getPotentialTrips(String tripStart, String fuzzyRunRoute, String serviceDate, AVLRecord avlRecord) {
+  private String findClosestStopId(DBAVLRecord record, String tripId) {
+//    return "PAV_1034";
+    return null;
+  }
+  
+  String getTripStartingAt(DBAVLRecord record, long currentTime) {
+    return getTripStartingAt(currentTime, ""+record.getId(), record.getReportDate(), record.getLogonTripDate(), record.getLogonTrip(), record.getLogonRoute());
+  }
+  
+  String getTripStartingAt(PositionReport pr, long currentTime) {
+    return getTripStartingAt(currentTime, pr.getCellId(), toReportDate(currentTime), toLogonDate(currentTime), pr.getOperatorId(), pr.getCellId());
+  }
+  
+  private Date toLogonDate(long currentTime) {
+    _fullDate.format(new Date(currentTime));
+    return null;
+  }
+  private Date toReportDate(long currentTime) {
+    _date.format(new Date(currentTime));
+    return null;
+  }
+  // package private for unit tests  
+  String  getTripStartingAt(long currentTime, String id, Date reportDate, Date logonTripDate, String logonTrip, String logonRoute) {
+    _log.debug("reportdate=" + reportDate + "; logonDate=" + logonTripDate);
+    
+    // test age of record
+    if (reportDate == null || logonTripDate == null)
+      return null;
+    
+    if (Math.abs(currentTime - reportDate.getTime()) > 10 * 60 * 1000) {
+      _log.debug("record " + id + " too old at " + reportDate);
+      return null;
+    }
+//    _log.info("record " + id + ":" + logonRoute + " is " 
+//        + (currentTime - reportDate.getTime()) + "ms old:"
+//        + reportDate);
+    
+    
+    String tripStart = logonTrip;
+    for (AgencyWithCoverageBean agency : _tds.getAgenciesWithCoverage()) {
+      long queryTime = logonTripDate.getTime();
+      String agencyId = agency.getAgency().getId();
+      List<BlockInstance> instances = _blockCalendarService.getActiveBlocksForAgencyInTimeRange(
+          agencyId, queryTime, queryTime+(60*1000));
+      
+      long logonStartTime = getTripStartSeconds(logonTrip);
+      String fuzzyRoute = getFuzzyRoute(logonRoute);
+      
+      for (BlockInstance block : instances) {
+        for (BlockTripEntry trip : block.getBlock().getTrips()) {
+          int departureTimeForIndex = trip.getDepartureTimeForIndex(0);
+          long tripStartTime = departureTimeForIndex;
+          if (tripStartTime == logonStartTime) {
+
+            String tripRouteId = getRouteNameFromRouteId(trip.getTrip().getRoute().getId().toString());
+//            _log.info("tripRouteId=" + tripRouteId);
+            if (fuzzyRoute != null && fuzzyRoute.equals(tripRouteId)) {
+//              _log.info("match for trip=" + trip.getTrip().getId().toString());
+              return trip.getTrip().getId().toString();
+//              return null;
+            }
+          }
+        } 
+       
+      }
+      // we didn't match a schedule trip, try frequency
+      for (BlockInstance block : instances) {
+        FrequencyEntry frequency = block.getState().getFrequency();
+        if (frequency != null) {
+          String tripId = block.getBlock().getTrips().get(0).getTrip().getId().toString();
+//          _log.info("freq start:" + frequency.getStartTime() + "?=" + logonStartTime);
+          BlockTripEntry trip = block.getBlock().getTrips().get(0);
+          String tripRouteId = getRouteNameFromTripId(trip.getTrip().getId().toString());
+//          _log.info("fuzzyRoute=" + fuzzyRoute);
+//          String direction = getFuzzyDirection(logonRoute);
+          String direction = null;
+//          _log.info("logonRoute=" + logonRoute + ", tripRouteId=" + tripRouteId + "(" + trip.getTrip().getId().toString() + ")");
+          if (logonRoute.equals(tripRouteId)) {
+//            _log.info("logonRoute=" + logonRoute + ", tripRouteId=" + tripRouteId);
+            if (direction == null || direction.equals(trip.getTrip().getDirectionId())) {
+              // the TDS doesn't hand us the exact frequency interval, we need to search through the entries
+              long frequencyStartTime = frequency.getStartTime();
+              while (frequencyStartTime != logonStartTime) {
+                if (frequencyStartTime > frequency.getEndTime()) {
+                  break;
+                }
+//                frequencyStartTime += frequency.getHeadwaySecs(); // TODO the GTFS does not match realtime anymore
+                  frequencyStartTime += 300;
+              }
+              if (frequencyStartTime == logonStartTime) {
+                _log.info("match for trip=" + tripId);
+                return tripId;
+              }
+            }
+          }
+        }
+
+      }
+      
+      
+    }// end agency
+    
+    return null;
+  }
+
+  List<TripInfo> getPotentialTrips(String tripStart, String fuzzyRunRoute, String serviceDate, DBAVLRecord avlRecord) {
     _log.info("fuzzyRunRoute=" + fuzzyRunRoute);
     List<TripInfo> potentials = new ArrayList<TripInfo>();
     if (tripStart == null || tripStart.contains("--")) return potentials;
@@ -209,7 +330,7 @@ public class AVLTranslator {
   
   
   private void geFrequencyTrips(List<TripInfo> potentials, TripInfo tripInfo,
-      AVLRecord avlRecord, BlockInstance block, String serviceDate,
+      DBAVLRecord avlRecord, BlockInstance block, String serviceDate,
       long tripStartSeconds) {
     
     // TODO prune report times older than 10 minutes
@@ -274,7 +395,7 @@ public class AVLTranslator {
     return "" + (blockDeparture/3600) + ":" + (blockDeparture/60)%60;
   }
   private ScheduledBlockLocation findClosestStopSequence(BlockInstance block,
-      TripEntry trip, AVLRecord avlRecord) {
+      TripEntry trip, DBAVLRecord avlRecord) {
     double minDistanceAway = Double.POSITIVE_INFINITY;
     int count = 0;
     int stopSequence = 0;
@@ -325,7 +446,7 @@ public class AVLTranslator {
     return null;
   }
   private void getOldFrequencyTrips(List<TripInfo> potentials,
-      TripInfo tripInfo, AVLRecord avlRecord, BlockInstance block,
+      TripInfo tripInfo, DBAVLRecord avlRecord, BlockInstance block,
       String serviceDate, long tripStartSeconds) {
     TripEntry trip = block.getBlock().getTrips().get(0).getTrip();
     /*
@@ -367,6 +488,7 @@ public class AVLTranslator {
     
     
   }
+  
   private String getFuzzyDirection(String s) {
     if (s == null) return null;
     if (s.endsWith("O"))
@@ -435,10 +557,29 @@ public class AVLTranslator {
     Matcher runRouteMatcher = ROUTE_ID.matcher(s);
     if (runRouteMatcher.matches()) {
       fuzzy = runRouteMatcher.group(2);
+//      if (runRouteMatcher.groupCount() > 2)
+//      fuzzy += runRouteMatcher.group(3);
     }
     return fuzzy;
   }
   
+  public String getRouteNameFromTripId(String s) {
+    if (s == null) return null;
+    String fuzzy = null;
+    Matcher runRouteMatcher = TRIP_ID.matcher(s);
+    if (runRouteMatcher.matches()) {
+      fuzzy = runRouteMatcher.group(3);
+      if (runRouteMatcher.groupCount() > 3)
+      fuzzy += runRouteMatcher.group(4);
+    }
+    if ("52AC".equals(fuzzy))
+      return "52A";
+    if ("52C".equals(fuzzy))
+      return "52";
+
+    return fuzzy;
+  }
+
   
   private CoordinateBounds getAgencyBounds() {
     if (_agencyBounds == null) {
@@ -476,6 +617,18 @@ public class AVLTranslator {
     public String toString() {
       return _vehicleId+":"+_tripId + ":" + _distanceAlongTrip;
     }
+  }
+
+  public VehicleRecord translate(PositionReport pr) {
+    long currentTime = System.currentTimeMillis();
+    String tripId = this.getTripStartingAt(pr, currentTime);
+    if (tripId == null) {
+      return null;
+    }
+    VehicleRecord vr = new VehicleRecord();
+    vr.setLat(pr.getLat());
+    vr.setLon(pr.getLon());
+    return null;
   }
   
 }

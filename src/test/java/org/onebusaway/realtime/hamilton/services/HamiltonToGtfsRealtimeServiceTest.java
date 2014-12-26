@@ -13,7 +13,7 @@ import org.junit.AfterClass;
 import org.junit.Before;
 import org.junit.BeforeClass;
 import org.junit.Test;
-import org.onebusaway.realtime.hamilton.model.AVLRecord;
+import org.onebusaway.realtime.hamilton.model.DBAVLRecord;
 import org.onebusaway.realtime.hamilton.model.VehicleRecord;
 import org.onebusaway.realtime.hamilton.tds.AVLTranslator;
 import org.onebusaway.transit_data.services.TransitDataService;
@@ -63,7 +63,7 @@ public class HamiltonToGtfsRealtimeServiceTest {
   public void testData() throws Exception {
     HamiltonToGtfsRealtimeService service = new HamiltonToGtfsRealtimeService();
     Connection connection = service.getConnection(service.getConnectionProperties());
-    List<AVLRecord> records = service.getAVLRecords(connection);
+    List<DBAVLRecord> records = service.getAVLRecords(connection);
     assertNotNull(records);
     System.out.println("records=" + records);
     connection.close();
@@ -77,7 +77,7 @@ public class HamiltonToGtfsRealtimeServiceTest {
     String[] files = {"org/onebusaway/realtime/hamilton/application-context-webapp.xml","data-sources.xml"};
     ClassPathXmlApplicationContext context = new ClassPathXmlApplicationContext(files);
     _log.error("spring load complete");
-    AVLRecord record = getTestAVLRecord();
+    DBAVLRecord record = getTestAVLRecord();
     AVLTranslator translator = new AVLTranslatorTest();
     TransitDataService tds = context.getBean(TransitDataService.class);
     BlockCalendarService bcs = context.getBean(BlockCalendarService.class);
@@ -116,12 +116,12 @@ public class HamiltonToGtfsRealtimeServiceTest {
     context.close();
   }
 
-  private AVLRecord getTestAVLRecord() {
+  private DBAVLRecord getTestAVLRecord() {
   //AVL(87, 3087, 1970-01-01, -37.799281, 175.259078, 15A, 0715, null, 2014-05-19)
-  AVLRecord record = new AVLRecord();
+  DBAVLRecord record = new DBAVLRecord();
   record.setId(87);
   record.setBusId(87);
-  record.setReportTime(new Date(System.currentTimeMillis()));
+  record.setReportDate(new Date(System.currentTimeMillis()));
   record.setLat(-37.799281);
   record.setLon(175.259078);
   record.setLogonRoute("15A");

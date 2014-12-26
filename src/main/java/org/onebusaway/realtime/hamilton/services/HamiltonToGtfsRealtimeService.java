@@ -23,7 +23,7 @@ import javax.servlet.ServletContext;
 import org.onebusaway.gtfs_realtime.exporter.GtfsRealtimeLibrary;
 import org.onebusaway.gtfs_realtime.exporter.GtfsRealtimeMutableProvider;
 import org.onebusaway.gtfs_realtime.exporter.GtfsRealtimeProviderImpl;
-import org.onebusaway.realtime.hamilton.model.AVLRecord;
+import org.onebusaway.realtime.hamilton.model.DBAVLRecord;
 import org.onebusaway.realtime.hamilton.model.StopTimeInfo;
 import org.onebusaway.realtime.hamilton.model.VehicleRecord;
 import org.onebusaway.realtime.hamilton.sql.ResultSetMapper;
@@ -61,11 +61,16 @@ public class HamiltonToGtfsRealtimeService implements ServletContextAware {
   private ScheduledExecutorService _delayExecutor;
   private String _url = null;
   private int _refreshInterval = 60;
+  private VehicleUpdateService _vehicleUpdateService;
   public void setRefreshInterval(int interval) {
    _refreshInterval = interval; 
   }
   public void setAVLTranslator(AVLTranslator translator) {
     _avlTranslator = translator;
+  }
+  
+  public void setVehicleUpdateService(VehicleUpdateService vus) {
+    _vehicleUpdateService = vus;
   }
   
   public void setGtfsRealtimeProvider(GtfsRealtimeMutableProvider p) {
@@ -121,6 +126,10 @@ public class HamiltonToGtfsRealtimeService implements ServletContextAware {
   
   // package private for unit tests
   Map getConnectionProperties() {
+    if (_url == null) {
+      _log.error("testing mode:  URL not configured");
+      return null;
+    }
     HashMap<String, String> properties = new HashMap<String, String>();
     properties.put(DB_URL, _url);
     return properties;
@@ -128,13 +137,16 @@ public class HamiltonToGtfsRealtimeService implements ServletContextAware {
   
   // package private for unit tests
   Connection getConnection(Map<String, String> properties) throws Exception {
+    if (properties == null) return null;
+    
     _log.info("db_url=" + properties.get(DB_URL));
     return DriverManager.getConnection(properties.get(DB_URL));
   }
   
-  List<AVLRecord> getAVLRecords(Connection connection) throws Exception {
+  List<DBAVLRecord> getAVLRecords(Connection connection) throws Exception {
 // TODO for testing
-        ResultSet rs = null;
+    ResultSet rs = null;
+    if (connection == null) return null;
     Statement statement = connection.createStatement(ResultSet.TYPE_SCROLL_SENSITIVE, ResultSet.CONCUR_UPDATABLE);
     rs = statement.executeQuery(QUERY_STRING);
     ResultSetMapper mapper = new ResultSetMapper();
@@ -155,11 +167,14 @@ public class HamiltonToGtfsRealtimeService implements ServletContextAware {
 //    return r;
   }
   
-  List<VehicleRecord> getBlockRecords(List<AVLRecord> input) {
+  List<VehicleRecord> getBlockRecords(List<DBAVLRecord> input) {
+    if (input == null) return null;
     List<VehicleRecord> output = new ArrayList<VehicleRecord>();
-    for (AVLRecord record: input) {
-      output.add(_avlTranslator.translate(record));
+    for (DBAVLRecord record: input) {
+      VehicleRecord vehicleRecord = _avlTranslator.translate(record);
+      output.add(vehicleRecord);
     }
+    _log.info("translated " + output.size() + " records.");
     return output;
   }
   
@@ -169,6 +184,8 @@ public class HamiltonToGtfsRealtimeService implements ServletContextAware {
       _gtfsRealtimeProvider.setTripUpdates(tripUpdates);
       // update metrics
       _gtfsRealtimeProvider.setLastUpdateTimestamp(System.currentTimeMillis());
+    } else {
+      _log.error("testing mode: no gtfs realtime provider");
     }
     FeedMessage vehicleUpdates = buildVehiclePositions(records);
     if (_gtfsRealtimeProvider != null)
@@ -180,9 +197,18 @@ public class HamiltonToGtfsRealtimeService implements ServletContextAware {
     Connection conn = null;
     try {
       conn = getConnection(getConnectionProperties());
-      List<VehicleRecord> records = getBlockRecords(getAVLRecords(conn));
+      List<VehicleRecord> records = new ArrayList<VehicleRecord>();
+      List<VehicleRecord> blockRecords = getBlockRecords(getAVLRecords(conn));
+      if (blockRecords != null) {
+        records.addAll(blockRecords);
+      }
+      List<VehicleRecord> vuRecords = _vehicleUpdateService.getRecentVehicleRecords();
+      if (vuRecords != null) {
+        records.addAll(vuRecords);  
+      }
+      
       writeGtfsRealtimeOutput(records);
-      _log.info("found " + records.size() + " updates");
+      _log.info("found " + (records==null?"NuLl":records.size()) + " updates");
     } catch (Exception any) {
       _log.error("exception writing GTFS data:", any);
     } finally {
@@ -213,6 +239,7 @@ public class HamiltonToGtfsRealtimeService implements ServletContextAware {
   }
 
   private String cleanRouteId(String routeId) {
+    if (routeId == null) return null;
     String shortRouteId = routeId;
     shortRouteId = shortRouteId.replaceAll("PAV_", "");
     return shortRouteId;
@@ -222,92 +249,97 @@ public class HamiltonToGtfsRealtimeService implements ServletContextAware {
   private FeedMessage buildTripUpdates(List<VehicleRecord> records) {
     FeedMessage.Builder tripUpdates = GtfsRealtimeLibrary.createFeedMessageBuilder();
     ArrayList<StopTimeUpdate> stopTimeUpdateSet = new ArrayList<StopTimeUpdate>();
-    
-    for (VehicleRecord record : records) {
-      if (record == null) continue;
-      String vehicleId = record.getVehicleId();
-      int delay = record.getDelay();
-      double lat = record.getLat();
-      double lon = record.getLon();
-      int speed = record.getSpeed();
-      int bearing = record.getBearing();
-      int seq = record.getSeq();
-      Timestamp time = record.getTime();
-      String stopId = record.getStopId();
-      String routeId = record.getRouteId();
-      String tripId = record.getTripId();
-      
-      /**
-       * StopTime Event
-       */
-      StopTimeEvent.Builder arrival = StopTimeEvent.newBuilder();
-      
-      
-      
-      /**
-       * StopTime Update
-       */
-      StopTimeUpdate.Builder stopTimeUpdate = StopTimeUpdate.newBuilder();
-      
-      if (record.isFrequency()) {
-        for (StopTimeInfo sti : record.getStopTimeInfos()) {
-//          if (sti.getStopSequence() != 0) {
-//          stopTimeUpdate.setStopSequence(sti.getStopSequence());
-//          }
-          stopTimeUpdate.setStopId(cleanStopId(sti.getStopId()));
-          arrival.setTime(System.currentTimeMillis()/1000); // TODO HACK
-          arrival.setUncertainty(300);
-          stopTimeUpdate.setArrival(arrival);
-
-          stopTimeUpdateSet.add(stopTimeUpdate.build());
-        }
-
-      } else {
-        arrival.setDelay(delay);
-        arrival.setUncertainty(30);
-        if(stopId == null){
-          continue;
-        }
-        if (seq != 0) {
-          stopTimeUpdate.setStopSequence(seq);
-        }
-        stopTimeUpdate.setStopId(cleanStopId(stopId));
-        stopTimeUpdate.setArrival(arrival);
-        // Google requested adding departure delays for Google Transit (Issue #7).
-        // Since we don't have explicit departure delay info from OrbCAD,
-        // at the suggestion of Google we will just use arrival delay as a substitute
-        stopTimeUpdate.setDeparture(arrival);  
+    if (records != null) {
+      for (VehicleRecord record : records) {
+        if (record == null) continue;
+        String vehicleId = record.getVehicleId();
+        int delay = record.getDelay();
+        double lat = record.getLat();
+        double lon = record.getLon();
+        int speed = record.getSpeed();
+        int bearing = record.getBearing();
+        int seq = record.getSeq();
+        Timestamp time = record.getTime();
+        String stopId = record.getStopId();
+        String routeId = record.getRouteId();
+        String tripId = record.getTripId();
         
-        stopTimeUpdateSet.add(stopTimeUpdate.build());
+        /**
+         * StopTime Event
+         */
+        StopTimeEvent.Builder arrival = StopTimeEvent.newBuilder();
+        
+        
+        
+        /**
+         * StopTime Update
+         */
+        StopTimeUpdate.Builder stopTimeUpdate = StopTimeUpdate.newBuilder();
+        
+        if (record.isFrequency()) {
+          for (StopTimeInfo sti : record.getStopTimeInfos()) {
+  //          if (sti.getStopSequence() != 0) {
+  //          stopTimeUpdate.setStopSequence(sti.getStopSequence());
+  //          }
+            stopTimeUpdate.setStopId(cleanStopId(sti.getStopId()));
+            arrival.setTime(System.currentTimeMillis()/1000); // TODO HACK
+            arrival.setUncertainty(300);
+            stopTimeUpdate.setArrival(arrival);
+  
+            stopTimeUpdateSet.add(stopTimeUpdate.build());
+          }
+  
+        } else {
+          arrival.setDelay(delay);
+          arrival.setUncertainty(30);
+          if(stopId == null){
+//            _log.error("skipping because missing stopId");
+//            continue;
+          } else {
+            if (seq != 0) {
+              stopTimeUpdate.setStopSequence(seq);
+            }
+            stopTimeUpdate.setStopId(cleanStopId(stopId));
+            stopTimeUpdate.setArrival(arrival);
+            // Google requested adding departure delays for Google Transit (Issue #7).
+            // Since we don't have explicit departure delay info from OrbCAD,
+            // at the suggestion of Google we will just use arrival delay as a substitute
+            stopTimeUpdate.setDeparture(arrival);  
+            
+            stopTimeUpdateSet.add(stopTimeUpdate.build());
+          }
+        }
+  
+        /**
+         * Trip Descriptor
+         */
+        TripDescriptor.Builder tripDescriptor = TripDescriptor.newBuilder();
+        tripDescriptor.setTripId(cleanTripId(tripId));
+        if (routeId != null) {
+          tripDescriptor.setRouteId(cleanRouteId(routeId));
+        }
+        /**
+         * Vehicle Descriptor
+         */
+        VehicleDescriptor.Builder vehicleDescriptor = VehicleDescriptor.newBuilder();
+        if(vehicleId!=null && !vehicleId.isEmpty()) {
+          vehicleDescriptor.setId(vehicleId);
+        }
+        
+        TripUpdate.Builder tripUpdate = TripUpdate.newBuilder();
+        tripUpdate.addAllStopTimeUpdate(stopTimeUpdateSet);
+        stopTimeUpdateSet.clear();
+        tripUpdate.setTrip(tripDescriptor);
+        if(vehicleId!=null && !vehicleId.isEmpty()) {
+          tripUpdate.setVehicle(vehicleDescriptor);
+        }
+        
+        FeedEntity.Builder tripUpdateEntity = FeedEntity.newBuilder();
+        tripUpdateEntity.setId(TRIP_UPDATE_PREFIX+tripId);
+        tripUpdateEntity.setTripUpdate(tripUpdate);
+        tripUpdates.addEntity(tripUpdateEntity);
+  
       }
-
-      /**
-       * Trip Descriptor
-       */
-      TripDescriptor.Builder tripDescriptor = TripDescriptor.newBuilder();
-      tripDescriptor.setTripId(cleanTripId(tripId));
-      tripDescriptor.setRouteId(cleanRouteId(routeId));
-      /**
-       * Vehicle Descriptor
-       */
-      VehicleDescriptor.Builder vehicleDescriptor = VehicleDescriptor.newBuilder();
-      if(vehicleId!=null && !vehicleId.isEmpty()) {
-        vehicleDescriptor.setId(vehicleId);
-      }
-      
-      TripUpdate.Builder tripUpdate = TripUpdate.newBuilder();
-      tripUpdate.addAllStopTimeUpdate(stopTimeUpdateSet);
-      stopTimeUpdateSet.clear();
-      tripUpdate.setTrip(tripDescriptor);
-      if(vehicleId!=null && !vehicleId.isEmpty()) {
-        tripUpdate.setVehicle(vehicleDescriptor);
-      }
-      
-      FeedEntity.Builder tripUpdateEntity = FeedEntity.newBuilder();
-      tripUpdateEntity.setId(TRIP_UPDATE_PREFIX+tripId);
-      tripUpdateEntity.setTripUpdate(tripUpdate);
-      tripUpdates.addEntity(tripUpdateEntity);
-
     }
     return tripUpdates.build();
   }
@@ -317,58 +349,60 @@ public class HamiltonToGtfsRealtimeService implements ServletContextAware {
     
     HashSet<String> vehicleIdSet = new HashSet<String>();
     
-    for (VehicleRecord record : records) {
-      if (record == null) continue;
-      String vehicleId = record.getVehicleId();
-      int delay = record.getDelay();
-      double lat = record.getLat();
-      double lon = record.getLon();
-      int speed = record.getSpeed();
-      int bearing = record.getBearing();
-      int seq = record.getSeq();
-      Timestamp time = record.getTime();
-      String stopId = record.getStopId();
-      String routeId = record.getRouteId();
-      String tripId = record.getTripId();
-      if(!vehicleIdSet.contains(vehicleId)){
-        vehicleIdSet.add(vehicleId);
-      } else {
-        continue;
+    if (records != null) {
+      for (VehicleRecord record : records) {
+        if (record == null) continue;
+        String vehicleId = record.getVehicleId();
+        int delay = record.getDelay();
+        double lat = record.getLat();
+        double lon = record.getLon();
+        int speed = record.getSpeed();
+        int bearing = record.getBearing();
+        int seq = record.getSeq();
+        Timestamp time = record.getTime();
+        String stopId = record.getStopId();
+        String routeId = record.getRouteId();
+        String tripId = record.getTripId();
+        if(!vehicleIdSet.contains(vehicleId)){
+          vehicleIdSet.add(vehicleId);
+        } else {
+          continue;
+        }
+  
+        /**
+         * Trip Descriptor
+         */
+        TripDescriptor.Builder tripDescriptor = TripDescriptor.newBuilder();
+        tripDescriptor.setTripId(cleanTripId(tripId));
+  
+        /**
+         * Vehicle Descriptor
+         */
+        VehicleDescriptor.Builder vehicleDescriptor = VehicleDescriptor.newBuilder();
+        vehicleDescriptor.setId(vehicleId);
+  
+        /**
+         * To construct our VehiclePosition, we create a position for the vehicle.
+         * We add the position to a VehiclePosition builder, along with the trip
+         * and vehicle descriptors.
+         */
+        Position.Builder position = Position.newBuilder();
+        position.setLatitude((float) lat);
+        position.setLongitude((float) lon);
+        position.setSpeed((float) speed);
+        position.setBearing((float) bearing);
+  
+        VehiclePosition.Builder vehiclePosition = VehiclePosition.newBuilder();
+        vehiclePosition.setPosition(position);
+        vehiclePosition.setTrip(tripDescriptor);
+        vehiclePosition.setVehicle(vehicleDescriptor);
+  
+        FeedEntity.Builder vehiclePositionEntity = FeedEntity.newBuilder();
+        vehiclePositionEntity.setId(VEHICLE_POSITION_PREFIX+vehicleId);
+        vehiclePositionEntity.setVehicle(vehiclePosition);
+  
+        vehiclePositions.addEntity(vehiclePositionEntity);
       }
-
-      /**
-       * Trip Descriptor
-       */
-      TripDescriptor.Builder tripDescriptor = TripDescriptor.newBuilder();
-      tripDescriptor.setTripId(cleanTripId(tripId));
-
-      /**
-       * Vehicle Descriptor
-       */
-      VehicleDescriptor.Builder vehicleDescriptor = VehicleDescriptor.newBuilder();
-      vehicleDescriptor.setId(vehicleId);
-
-      /**
-       * To construct our VehiclePosition, we create a position for the vehicle.
-       * We add the position to a VehiclePosition builder, along with the trip
-       * and vehicle descriptors.
-       */
-      Position.Builder position = Position.newBuilder();
-      position.setLatitude((float) lat);
-      position.setLongitude((float) lon);
-      position.setSpeed((float) speed);
-      position.setBearing((float) bearing);
-
-      VehiclePosition.Builder vehiclePosition = VehiclePosition.newBuilder();
-      vehiclePosition.setPosition(position);
-      vehiclePosition.setTrip(tripDescriptor);
-      vehiclePosition.setVehicle(vehicleDescriptor);
-
-      FeedEntity.Builder vehiclePositionEntity = FeedEntity.newBuilder();
-      vehiclePositionEntity.setId(VEHICLE_POSITION_PREFIX+vehicleId);
-      vehiclePositionEntity.setVehicle(vehiclePosition);
-
-      vehiclePositions.addEntity(vehiclePositionEntity);
     }
 
     return vehiclePositions.build();

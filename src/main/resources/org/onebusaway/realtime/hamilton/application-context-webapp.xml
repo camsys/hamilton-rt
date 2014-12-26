@@ -36,9 +36,14 @@
 		<property name="tripBeanService" ref="tripBeanServiceImpl" />
 		<property name="tripStopTimesBeanService" ref="tripStopTimesBeanServiceImpl" />
 	</bean>
+	<bean id="vehicleUpdateService" class="org.onebusaway.realtime.hamilton.services.VehicleUpdateServiceImpl">
+	
+	</bean>
+	
 	<bean id="gtfsService" class="org.onebusaway.realtime.hamilton.services.HamiltonToGtfsRealtimeService" >
 		<property name="AVLTranslator" ref="avlTranslator" />
 		<property name="gtfsRealtimeProvider" ref="gtfsProvider"/>
+		<property name="vehicleUpdateService" ref="vehicleUpdateService" />
 	</bean>
 	<bean id="gtfsProvider" class="org.onebusaway.gtfs_realtime.exporter.GtfsRealtimeProviderImpl" />
 	<bean id="tripUpdatesServlet" class="org.onebusaway.gtfs_realtime.exporter.TripUpdatesServlet">
