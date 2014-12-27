@@ -29,7 +29,12 @@ import org.onebusaway.realtime.hamilton.model.StopTimeInfo;
 import org.onebusaway.realtime.hamilton.model.TripInfo;
 import org.onebusaway.realtime.hamilton.model.VehicleRecord;
 import org.onebusaway.transit_data.model.AgencyWithCoverageBean;
+import org.onebusaway.transit_data.model.ListBean;
+import org.onebusaway.transit_data.model.TripStopTimeBean;
 import org.onebusaway.transit_data.model.trips.TripBean;
+import org.onebusaway.transit_data.model.trips.TripDetailsBean;
+import org.onebusaway.transit_data.model.trips.TripDetailsInclusionBean;
+import org.onebusaway.transit_data.model.trips.TripDetailsQueryBean;
 import org.onebusaway.transit_data.services.TransitDataService;
 import org.onebusaway.transit_data_federation.services.beans.TripBeanService;
 import org.onebusaway.transit_data_federation.services.beans.TripStopTimesBeanService;
@@ -107,10 +112,20 @@ public class AVLTranslator {
     
     
     
-   String tripId = getTripStartingAt(record, System.currentTimeMillis());
+   TripStuff stuff = getTripStartingAt(record, System.currentTimeMillis());
+   if (stuff == null) {
+     return null;
+   }
+   String tripId = stuff.getTripId();
+   boolean isFrequency = stuff.isFrequency();
+
    if (tripId == null) {
      return null;
    }
+   String stopId = getClosestStopId(record, System.currentTimeMillis(), tripId);
+   v.setFrequency(isFrequency);
+   
+   String routeId = tripId.split("_")[2];  
 //    BlockInstance block = tripInfo.getBlockInstance();
 //    BlockLocation location = tripInfo.getBlockLocation();
 //    v.setStopTimeInfos(tripInfo.getStopTimeInfos());
@@ -137,7 +152,9 @@ public class AVLTranslator {
 //    }
     
     v.setTripId(tripId);
-    v.setStopId(findClosestStopId(record, tripId));
+    v.setRouteId(routeId);
+    v.setStopId(stopId);
+//    v.setStopId(findClosestStopId(record, tripId));
 //    if (location != null) {
 //      AgencyAndId tripId = location.getActiveTrip().getTrip().getId();
 //      TripBean tripBean = _tripBeanService.getTripForId(tripId);
@@ -152,17 +169,29 @@ public class AVLTranslator {
 //    }
     return v;
   }
-
+  
+  private String getClosestStopId(DBAVLRecord record, long currentTimeMillis, String tripId) {
+    TripDetailsQueryBean query = new TripDetailsQueryBean();
+    query.setTripId(tripId);
+    ListBean<TripDetailsBean> tripDetails = _tds.getTripDetails(query);
+    if (tripDetails != null && !tripDetails.getList().isEmpty())
+    {
+      List<TripStopTimeBean> stopTimes = tripDetails.getList().get(0).getSchedule().getStopTimes();
+      int lastStop = stopTimes.size()-1;
+      return stopTimes.get(lastStop).getStop().getId();
+    }
+    return null;
+  }
   private String findClosestStopId(DBAVLRecord record, String tripId) {
 //    return "PAV_1034";
     return null;
   }
   
-  String getTripStartingAt(DBAVLRecord record, long currentTime) {
+  TripStuff getTripStartingAt(DBAVLRecord record, long currentTime) {
     return getTripStartingAt(currentTime, ""+record.getId(), record.getReportDate(), record.getLogonTripDate(), record.getLogonTrip(), record.getLogonRoute());
   }
   
-  String getTripStartingAt(PositionReport pr, long currentTime) {
+  TripStuff getTripStartingAt(PositionReport pr, long currentTime) {
     return getTripStartingAt(currentTime, pr.getCellId(), toReportDate(currentTime), toLogonDate(currentTime), pr.getOperatorId(), pr.getCellId());
   }
   
@@ -175,7 +204,7 @@ public class AVLTranslator {
     return null;
   }
   // package private for unit tests  
-  String  getTripStartingAt(long currentTime, String id, Date reportDate, Date logonTripDate, String logonTrip, String logonRoute) {
+  TripStuff  getTripStartingAt(long currentTime, String id, Date reportDate, Date logonTripDate, String logonTrip, String logonRoute) {
     _log.debug("reportdate=" + reportDate + "; logonDate=" + logonTripDate);
     
     // test age of record
@@ -211,7 +240,7 @@ public class AVLTranslator {
 //            _log.info("tripRouteId=" + tripRouteId);
             if (fuzzyRoute != null && fuzzyRoute.equals(tripRouteId)) {
 //              _log.info("match for trip=" + trip.getTrip().getId().toString());
-              return trip.getTrip().getId().toString();
+              return new TripStuff(trip.getTrip().getId().toString(), false);
 //              return null;
             }
           }
@@ -240,11 +269,11 @@ public class AVLTranslator {
                   break;
                 }
 //                frequencyStartTime += frequency.getHeadwaySecs(); // TODO the GTFS does not match realtime anymore
-                  frequencyStartTime += 300;
+                  frequencyStartTime += 60;
               }
               if (frequencyStartTime == logonStartTime) {
-                _log.info("match for trip=" + tripId);
-                return tripId;
+//                _log.info("match for trip=" + tripId);
+                return new TripStuff(tripId, true);
               }
             }
           }
@@ -659,8 +688,8 @@ public class AVLTranslator {
 
   public VehicleRecord translate(PositionReport pr) {
     long currentTime = System.currentTimeMillis();
-    String tripId = this.getTripStartingAt(pr, currentTime);
-    if (tripId == null) {
+    TripStuff stuff = this.getTripStartingAt(pr, currentTime);
+    if (stuff == null) {
       return null;
     }
     VehicleRecord vr = new VehicleRecord();
@@ -668,5 +697,19 @@ public class AVLTranslator {
     vr.setLon(pr.getLon());
     return null;
   }
-  
+
+  private static class TripStuff {
+    private String tripId;
+    private boolean isFrequency;
+    public TripStuff(String tripId, boolean isFrequency) {
+      this.tripId = tripId;
+      this.isFrequency = isFrequency;
+    }
+    public String getTripId() {
+      return tripId;
+    }
+    public boolean isFrequency() {
+      return isFrequency;
+    }
+  }
 }

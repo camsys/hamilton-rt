@@ -241,6 +241,7 @@ public class HamiltonToGtfsRealtimeService implements ServletContextAware {
     if (routeId == null) return null;
     String shortRouteId = routeId;
     shortRouteId = shortRouteId.replaceAll("PAV_", "");
+//    shortRouteId = shortRouteId.replaceAll("I", "").replaceAll("O", "").replaceAll("AC", "A").replaceAll("C", "");
     return shortRouteId;
   }
 
@@ -276,17 +277,11 @@ public class HamiltonToGtfsRealtimeService implements ServletContextAware {
       StopTimeUpdate.Builder stopTimeUpdate = StopTimeUpdate.newBuilder();
       
       if (record.isFrequency()) {
-        for (StopTimeInfo sti : record.getStopTimeInfos()) {
-//          if (sti.getStopSequence() != 0) {
-//          stopTimeUpdate.setStopSequence(sti.getStopSequence());
-//          }
-          stopTimeUpdate.setStopId(cleanStopId(sti.getStopId()));
+          stopTimeUpdate.setStopId(cleanStopId(stopId));
           arrival.setTime(System.currentTimeMillis()/1000); // TODO HACK
           arrival.setUncertainty(300);
           stopTimeUpdate.setArrival(arrival);
-
           stopTimeUpdateSet.add(stopTimeUpdate.build());
-        }
 
       } else {
         if (stopId != null) {
@@ -315,7 +310,9 @@ public class HamiltonToGtfsRealtimeService implements ServletContextAware {
        */
       TripDescriptor.Builder tripDescriptor = TripDescriptor.newBuilder();
       tripDescriptor.setTripId(cleanTripId(tripId));
-      tripDescriptor.setRouteId(cleanRouteId(routeId));
+      if (routeId != null)
+//        tripDescriptor.setRouteId(routeId);
+        tripDescriptor.setRouteId(cleanRouteId(routeId));
       /**
        * Vehicle Descriptor
        */
@@ -327,11 +324,11 @@ public class HamiltonToGtfsRealtimeService implements ServletContextAware {
       TripUpdate.Builder tripUpdate = TripUpdate.newBuilder();
       tripUpdate.addAllStopTimeUpdate(stopTimeUpdateSet);
 
-      if (stopId != null) {
-        OneBusAwayTripUpdate.Builder obaTripUpdate = OneBusAwayTripUpdate.newBuilder();
-        obaTripUpdate.setDelay(delay);
-        tripUpdate.setExtension(GtfsRealtimeOneBusAway.obaTripUpdate, obaTripUpdate.build());
-      }
+//      if (stopId != null) {
+//        OneBusAwayTripUpdate.Builder obaTripUpdate = OneBusAwayTripUpdate.newBuilder();
+//        obaTripUpdate.setDelay(delay);
+//        tripUpdate.setExtension(GtfsRealtimeOneBusAway.obaTripUpdate, obaTripUpdate.build());
+//      }
       stopTimeUpdateSet.clear();
       tripUpdate.setTrip(tripDescriptor);
       if(vehicleId!=null && !vehicleId.isEmpty()) {
@@ -377,6 +374,7 @@ public class HamiltonToGtfsRealtimeService implements ServletContextAware {
        */
       TripDescriptor.Builder tripDescriptor = TripDescriptor.newBuilder();
       tripDescriptor.setTripId(cleanTripId(tripId));
+//      tripDescriptor.setRouteId(cleanRouteId(routeId));
 
       /**
        * Vehicle Descriptor
