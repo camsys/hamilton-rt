@@ -15,7 +15,7 @@ public class ResultSetMapper {
     ArrayList<DBAVLRecord> data = new ArrayList<DBAVLRecord>();
     while (rs.next()) {
       DBAVLRecord avl = readRow(rs);
-      if (avl != null && avl.isValid()) {
+      if (avl != null) {
         data.add(avl);
       }
     }

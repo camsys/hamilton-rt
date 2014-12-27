@@ -1,6 +1,6 @@
 package org.onebusaway.realtime.hamilton.model;
 
-public class PositionReport implements AVLRecord {
+public class PositionReport implements IRecord {
   
   int sequenceNumber;
   int triggerType;

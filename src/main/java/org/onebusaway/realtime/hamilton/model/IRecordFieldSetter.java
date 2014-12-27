@@ -3,9 +3,9 @@ package org.onebusaway.realtime.hamilton.model;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-public abstract class AVLRecordFieldSetter<T extends AVLRecord> {
+public abstract class IRecordFieldSetter<T extends IRecord> {
   
-  private static final Logger _log = LoggerFactory.getLogger(AVLRecordFieldSetter.class);
+  private static final Logger _log = LoggerFactory.getLogger(IRecordFieldSetter.class);
   private boolean TRIM_LEFT_PADDING = true;
   
   protected byte[] bytes;

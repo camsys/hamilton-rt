@@ -3,18 +3,18 @@ package org.onebusaway.realtime.hamilton.model;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-abstract class WayfarerFieldSetter extends AVLRecordFieldSetter<WayfarerLogon> {
+abstract class WayfarerFieldSetter extends IRecordFieldSetter<WayfarerLogon> {
 }
 
-public class WayfarerLogonRecordFactory extends AVLRecordFactory<WayfarerLogon> {
+public class WayfarerLogonRecordFactory extends IRecordFactory<WayfarerLogon> {
   private static final Logger _log = LoggerFactory.getLogger(WayfarerLogonRecordFactory.class);
-  static class FieldDef extends AVLFieldDefinition<WayfarerLogon> {
-    public FieldDef(int lenght, String name, AVLRecordFieldSetter<WayfarerLogon> setter) {
+  static class FieldDef extends IFieldDefinition<WayfarerLogon> {
+    public FieldDef(int lenght, String name, IRecordFieldSetter<WayfarerLogon> setter) {
       super (lenght, name, setter);
     }
   }
 
-  private static AVLFieldDefinition[] fields = {
+  private static IFieldDefinition[] fields = {
     new FieldDef(1, "stx", new WayfarerFieldSetter() {
       public void setField(WayfarerLogon record) {
         _log.info("stx=" + getBcd());
@@ -90,7 +90,7 @@ public class WayfarerLogonRecordFactory extends AVLRecordFactory<WayfarerLogon> 
   };
   
   @Override
-  public AVLFieldDefinition<WayfarerLogon>[] getFields() {
+  public IFieldDefinition<WayfarerLogon>[] getFields() {
     return fields;
   }
   

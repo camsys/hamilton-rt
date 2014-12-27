@@ -249,52 +249,51 @@ public class AVLTranslator {
             }
           }
         }
-
       }
-      
       
     }// end agency
     
     return null;
   }
 
-  List<TripInfo> getPotentialTrips(String tripStart, String fuzzyRunRoute, String serviceDate, DBAVLRecord avlRecord) {
-    _log.info("fuzzyRunRoute=" + fuzzyRunRoute);
-  // we were not able to match the exact trip
-  // fall back on any active trips that match the route
-  private List<TripInfo> getActiveTrips(AVLRecord record) {
-    List<TripInfo> potentials = new ArrayList<TripInfo>();
-
-    long queryStartTime = System.currentTimeMillis() - 60 * 1000;
-    long queryEndTime = System.currentTimeMillis() + 60 * 1000;
-
-    for (AgencyWithCoverageBean agency : _tds.getAgenciesWithCoverage())  {
-      TripInfo tripInfo = new TripInfo();
-      String agencyId = agency.getAgency().getId();
-
-      List<BlockInstance> instances = _blockCalendarService.getActiveBlocksForAgencyInTimeRange(
-          agencyId, queryStartTime, queryEndTime);
-
-      for (BlockInstance block : instances) {
-      
-        for (BlockTripEntry blockTrip : block.getBlock().getTrips()) {
-          TripEntry trip = blockTrip.getTrip();
-          String routeId = trip.getRoute().getId().toString();
-          String routeName = getRouteNameFromRouteId(routeId);
-          String direction = getFuzzyDirection(record.getLogonRoute());
-          String avlRoute = getFuzzyRoute(record.getLogonRoute());
-          
-          if (routeName != null && avlRoute != null && routeName.matches(avlRoute)) {
-//            _log.info("matching trip=" + avlRoute + " direction=" + direction + "=?" + trip.getDirectionId());
-              tripInfo.setBlockInstance(block);
-              potentials.add(tripInfo);
-          }
-        }
-      }
-    }
-    return potentials;
-    
-  }
+//  List<TripInfo> getPotentialTrips(String tripStart, String fuzzyRunRoute, String serviceDate, DBAVLRecord avlRecord) {
+////    _log.info("fuzzyRunRoute=" + fuzzyRunRoute);
+//  // we were not able to match the exact trip
+//  // fall back on any active trips that match the route
+//  private List<TripInfo> getActiveTrips(AVLRecord record) {
+//    List<TripInfo> potentials = new ArrayList<TripInfo>();
+//
+//    long queryStartTime = System.currentTimeMillis() - 60 * 1000;
+//    long queryEndTime = System.currentTimeMillis() + 60 * 1000;
+//
+//    for (AgencyWithCoverageBean agency : _tds.getAgenciesWithCoverage())  {
+//      TripInfo tripInfo = new TripInfo();
+//      String agencyId = agency.getAgency().getId();
+//
+//      List<BlockInstance> instances = _blockCalendarService.getActiveBlocksForAgencyInTimeRange(
+//          agencyId, queryStartTime, queryEndTime);
+//
+//      for (BlockInstance block : instances) {
+//      
+//        for (BlockTripEntry blockTrip : block.getBlock().getTrips()) {
+//          TripEntry trip = blockTrip.getTrip();
+//          String routeId = trip.getRoute().getId().toString();
+//          String routeName = getRouteNameFromRouteId(routeId);
+//          String direction = getFuzzyDirection(record.getLogonRoute());
+//          String avlRoute = getFuzzyRoute(record.getLogonRoute());
+//          
+//          if (routeName != null && avlRoute != null && routeName.matches(avlRoute)) {
+////            _log.info("matching trip=" + avlRoute + " direction=" + direction + "=?" + trip.getDirectionId());
+//              tripInfo.setBlockInstance(block);
+//              potentials.add(tripInfo);
+//          }
+//        }
+//      }
+//    }
+//    return potentials;
+//  }
+  
+  
   List<TripInfo> getPotentialTrips(String tripStart, String fuzzyRunRoute, String serviceDate, AVLRecord avlRecord) {
 //    _log.info("fuzzyRunRoute=" + fuzzyRunRoute);
     List<TripInfo> potentials = new ArrayList<TripInfo>();
@@ -339,7 +338,7 @@ public class AVLTranslator {
           
           if (block.getState().getFrequency() != null) {
 //            getOldFrequencyTrips(potentials, tripInfo, avlRecord, block, serviceDate, tripStartSeconds);
-            geFrequencyTrips(potentials, tripInfo, avlRecord, block, serviceDate, tripStartSeconds);
+//            geFrequencyTrips(potentials, tripInfo, avlRecord, block, serviceDate, tripStartSeconds);
           } else {
             /*
              * schedule based matching
@@ -361,10 +360,10 @@ public class AVLTranslator {
             }
           }
         }
-        
       }
     }
-    return potentials;
+//    return potentials;
+    return null;
   }
   
   

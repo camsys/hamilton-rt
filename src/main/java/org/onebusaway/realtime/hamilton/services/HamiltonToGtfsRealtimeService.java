@@ -147,7 +147,6 @@ public class HamiltonToGtfsRealtimeService implements ServletContextAware {
   }
   
   List<DBAVLRecord> getAVLRecords(Connection connection) throws Exception {
-// TODO for testing
     ResultSet rs = null;
     Statement statement = null;
     try {
@@ -249,101 +248,54 @@ public class HamiltonToGtfsRealtimeService implements ServletContextAware {
   private FeedMessage buildTripUpdates(List<VehicleRecord> records) {
     FeedMessage.Builder tripUpdates = GtfsRealtimeLibrary.createFeedMessageBuilder();
     ArrayList<StopTimeUpdate> stopTimeUpdateSet = new ArrayList<StopTimeUpdate>();
-    if (records != null) {
-      for (VehicleRecord record : records) {
-        if (record == null) continue;
-        String vehicleId = record.getVehicleId();
-        int delay = record.getDelay();
-        double lat = record.getLat();
-        double lon = record.getLon();
-        int speed = record.getSpeed();
-        int bearing = record.getBearing();
-        int seq = record.getSeq();
-        Timestamp time = record.getTime();
-        String stopId = record.getStopId();
-        String routeId = record.getRouteId();
-        String tripId = record.getTripId();
-        
-        /**
-         * StopTime Event
-         */
-        StopTimeEvent.Builder arrival = StopTimeEvent.newBuilder();
-        
-        
-        
-        /**
-         * StopTime Update
-         */
-        StopTimeUpdate.Builder stopTimeUpdate = StopTimeUpdate.newBuilder();
-        
-        if (record.isFrequency()) {
-          for (StopTimeInfo sti : record.getStopTimeInfos()) {
-  //          if (sti.getStopSequence() != 0) {
-  //          stopTimeUpdate.setStopSequence(sti.getStopSequence());
-  //          }
-            stopTimeUpdate.setStopId(cleanStopId(sti.getStopId()));
-            arrival.setTime(System.currentTimeMillis()/1000); // TODO HACK
-            arrival.setUncertainty(300);
-            stopTimeUpdate.setArrival(arrival);
-  
-            stopTimeUpdateSet.add(stopTimeUpdate.build());
-          }
-  
-        } else {
-          arrival.setDelay(delay);
-          arrival.setUncertainty(30);
-          if(stopId == null){
-//            _log.error("skipping because missing stopId");
-//            continue;
-          } else {
-            if (seq != 0) {
-              stopTimeUpdate.setStopSequence(seq);
-            }
-            stopTimeUpdate.setStopId(cleanStopId(stopId));
-            stopTimeUpdate.setArrival(arrival);
-            // Google requested adding departure delays for Google Transit (Issue #7).
-            // Since we don't have explicit departure delay info from OrbCAD,
-            // at the suggestion of Google we will just use arrival delay as a substitute
-            stopTimeUpdate.setDeparture(arrival);  
-            
-            stopTimeUpdateSet.add(stopTimeUpdate.build());
-          }
+    
+    for (VehicleRecord record : records) {
+      if (record == null) continue;
+      String vehicleId = record.getVehicleId();
+      int delay = record.getDelay();
+      double lat = record.getLat();
+      double lon = record.getLon();
+      int speed = record.getSpeed();
+      int bearing = record.getBearing();
+      int seq = record.getSeq();
+      Timestamp time = record.getTime();
+      String stopId = record.getStopId();
+      String routeId = record.getRouteId();
+      String tripId = record.getTripId();
+      
+      /**
+       * StopTime Event
+       */
+      StopTimeEvent.Builder arrival = StopTimeEvent.newBuilder();
+      
+      
+      
+      /**
+       * StopTime Update
+       */
+      StopTimeUpdate.Builder stopTimeUpdate = StopTimeUpdate.newBuilder();
+      
+      if (record.isFrequency()) {
+        for (StopTimeInfo sti : record.getStopTimeInfos()) {
+//          if (sti.getStopSequence() != 0) {
+//          stopTimeUpdate.setStopSequence(sti.getStopSequence());
+//          }
+          stopTimeUpdate.setStopId(cleanStopId(sti.getStopId()));
+          arrival.setTime(System.currentTimeMillis()/1000); // TODO HACK
+          arrival.setUncertainty(300);
+          stopTimeUpdate.setArrival(arrival);
+
+          stopTimeUpdateSet.add(stopTimeUpdate.build());
         }
-  
-        /**
-         * Trip Descriptor
-         */
-        TripDescriptor.Builder tripDescriptor = TripDescriptor.newBuilder();
-        tripDescriptor.setTripId(cleanTripId(tripId));
-        if (routeId != null) {
-          tripDescriptor.setRouteId(cleanRouteId(routeId));
+
       } else {
         if (stopId != null) {
           arrival.setDelay(delay);
           arrival.setUncertainty(30);
         }
-        /**
-         * Vehicle Descriptor
-         */
-        VehicleDescriptor.Builder vehicleDescriptor = VehicleDescriptor.newBuilder();
-        if(vehicleId!=null && !vehicleId.isEmpty()) {
-          vehicleDescriptor.setId(vehicleId);
+        if (seq != 0) {
+          stopTimeUpdate.setStopSequence(seq);
         }
-        
-        TripUpdate.Builder tripUpdate = TripUpdate.newBuilder();
-        tripUpdate.addAllStopTimeUpdate(stopTimeUpdateSet);
-        stopTimeUpdateSet.clear();
-        tripUpdate.setTrip(tripDescriptor);
-        if(vehicleId!=null && !vehicleId.isEmpty()) {
-          tripUpdate.setVehicle(vehicleDescriptor);
-        }
-        
-        FeedEntity.Builder tripUpdateEntity = FeedEntity.newBuilder();
-        tripUpdateEntity.setId(TRIP_UPDATE_PREFIX+tripId);
-        tripUpdateEntity.setTripUpdate(tripUpdate);
-        tripUpdates.addEntity(tripUpdateEntity);
-  
-      }
         if (stopId != null) {
           stopTimeUpdate.setStopId(cleanStopId(stopId));
         }
@@ -392,8 +344,6 @@ public class HamiltonToGtfsRealtimeService implements ServletContextAware {
       
       tripUpdates.addEntity(tripUpdateEntity);
 
-
-
     }
     return tripUpdates.build();
   }
@@ -403,59 +353,23 @@ public class HamiltonToGtfsRealtimeService implements ServletContextAware {
     
     HashSet<String> vehicleIdSet = new HashSet<String>();
     
-    if (records != null) {
-      for (VehicleRecord record : records) {
-        if (record == null) continue;
-        String vehicleId = record.getVehicleId();
-        int delay = record.getDelay();
-        double lat = record.getLat();
-        double lon = record.getLon();
-        int speed = record.getSpeed();
-        int bearing = record.getBearing();
-        int seq = record.getSeq();
-        Timestamp time = record.getTime();
-        String stopId = record.getStopId();
-        String routeId = record.getRouteId();
-        String tripId = record.getTripId();
-        if(!vehicleIdSet.contains(vehicleId)){
-          vehicleIdSet.add(vehicleId);
-        } else {
-          continue;
-        }
-  
-        /**
-         * Trip Descriptor
-         */
-        TripDescriptor.Builder tripDescriptor = TripDescriptor.newBuilder();
-        tripDescriptor.setTripId(cleanTripId(tripId));
-  
-        /**
-         * Vehicle Descriptor
-         */
-        VehicleDescriptor.Builder vehicleDescriptor = VehicleDescriptor.newBuilder();
-        vehicleDescriptor.setId(vehicleId);
-  
-        /**
-         * To construct our VehiclePosition, we create a position for the vehicle.
-         * We add the position to a VehiclePosition builder, along with the trip
-         * and vehicle descriptors.
-         */
-        Position.Builder position = Position.newBuilder();
-        position.setLatitude((float) lat);
-        position.setLongitude((float) lon);
-        position.setSpeed((float) speed);
-        position.setBearing((float) bearing);
-  
-        VehiclePosition.Builder vehiclePosition = VehiclePosition.newBuilder();
-        vehiclePosition.setPosition(position);
-        vehiclePosition.setTrip(tripDescriptor);
-        vehiclePosition.setVehicle(vehicleDescriptor);
-  
-        FeedEntity.Builder vehiclePositionEntity = FeedEntity.newBuilder();
-        vehiclePositionEntity.setId(VEHICLE_POSITION_PREFIX+vehicleId);
-        vehiclePositionEntity.setVehicle(vehiclePosition);
-  
-        vehiclePositions.addEntity(vehiclePositionEntity);
+    for (VehicleRecord record : records) {
+      if (record == null) continue;
+      String vehicleId = record.getVehicleId();
+      int delay = record.getDelay();
+      double lat = record.getLat();
+      double lon = record.getLon();
+      int speed = record.getSpeed();
+      int bearing = record.getBearing();
+      int seq = record.getSeq();
+      Timestamp time = record.getTime();
+      String stopId = record.getStopId();
+      String routeId = record.getRouteId();
+      String tripId = record.getTripId();
+      if(!vehicleIdSet.contains(vehicleId)){
+        vehicleIdSet.add(vehicleId);
+      } else {
+        continue;
       }
       
       /**

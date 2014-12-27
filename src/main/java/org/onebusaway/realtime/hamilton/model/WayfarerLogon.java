@@ -1,6 +1,6 @@
 package org.onebusaway.realtime.hamilton.model;
 
-public class WayfarerLogon implements AVLRecord {
+public class WayfarerLogon implements IRecord {
   private String command;
   private String driver;
   private String module;

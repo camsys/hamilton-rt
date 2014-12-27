@@ -15,8 +15,8 @@ import org.codehaus.jackson.JsonNode;
 import org.codehaus.jackson.map.AnnotationIntrospector;
 import org.codehaus.jackson.map.ObjectMapper;
 import org.codehaus.jackson.xc.JaxbAnnotationIntrospector;
-import org.onebusaway.realtime.hamilton.model.AVLRecordFactory;
-import org.onebusaway.realtime.hamilton.model.AVLRecord;
+import org.onebusaway.realtime.hamilton.model.IRecordFactory;
+import org.onebusaway.realtime.hamilton.model.IRecord;
 import org.onebusaway.realtime.hamilton.model.PositionReport;
 import org.onebusaway.realtime.hamilton.model.PositionReportRecordFactory;
 import org.onebusaway.realtime.hamilton.model.VehicleMessage;
@@ -46,7 +46,7 @@ public class VehicleUpdateServiceImpl implements VehicleUpdateService {
 
   private int _timeout = 5; // minutes
   
-  static Map<String, AVLRecordFactory<?>> recordFactories;
+  static Map<String, IRecordFactory<?>> recordFactories;
 
   private AVLTranslator _avlTranslator = null;
   public void setAVLTranslator(AVLTranslator avl) {
@@ -55,7 +55,7 @@ public class VehicleUpdateServiceImpl implements VehicleUpdateService {
   
   
   static {
-    recordFactories = new HashMap<String, AVLRecordFactory<?>>();
+    recordFactories = new HashMap<String, IRecordFactory<?>>();
     recordFactories.put(UPDATE_MESSAGE_MARKER, new PositionReportRecordFactory());
     recordFactories.put(LOGON_MESSAGE_MARKER, new WayfarerLogonRecordFactory());
     
@@ -189,7 +189,7 @@ public class VehicleUpdateServiceImpl implements VehicleUpdateService {
   }
 
 
-  public AVLRecord receiveWayfarerLogOnOff(byte[] buff) {
+  public IRecord receiveWayfarerLogOnOff(byte[] buff) {
     if (buff.length >= 27) {
       int start = 0;
       int len = buff.length;
@@ -197,7 +197,7 @@ public class VehicleUpdateServiceImpl implements VehicleUpdateService {
       
       String byteMarker = new String(Arrays.copyOfRange(buff, 0, 3));
       _log.info("byteMarker=" + byteMarker);
-      AVLRecordFactory<?> factory = recordFactories.get(byteMarker);
+      IRecordFactory<?> factory = recordFactories.get(byteMarker);
       if (factory != null) {
          return factory.createRecord(buff, 0, buff.length);
       } else {
@@ -255,7 +255,7 @@ public class VehicleUpdateServiceImpl implements VehicleUpdateService {
    * GPS Update.
    * 
    */
-  public AVLRecord recieveGPSUpdate(byte[] buff) {
+  public IRecord recieveGPSUpdate(byte[] buff) {
     int start = 0;
     int len = buff.length;
     _log.info("u(" + len + "):" + new String(buff));
@@ -264,7 +264,7 @@ public class VehicleUpdateServiceImpl implements VehicleUpdateService {
       String byteMarker = new String(Arrays.copyOfRange(buff, 0, 4));
 //      _log.info("byteMarker=" + byteMarker);
       if (UPDATE_MESSAGE_MARKER.equals(byteMarker)) {
-        AVLRecordFactory<?> factory = recordFactories.get(byteMarker);
+        IRecordFactory<?> factory = recordFactories.get(byteMarker);
         if (factory != null) {
          return  factory.createRecord(buff, 0, buff.length);
         } else {

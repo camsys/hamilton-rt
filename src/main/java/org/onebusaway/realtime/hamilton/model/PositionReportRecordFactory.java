@@ -1,6 +1,6 @@
 package org.onebusaway.realtime.hamilton.model;
 
-abstract class PositionReportFieldSetter extends AVLRecordFieldSetter<PositionReport> {
+abstract class PositionReportFieldSetter extends IRecordFieldSetter<PositionReport> {
 }
 
 /*
@@ -99,15 +99,15 @@ field is reserved.
 
 g Reserved for future use.
  */
-public class PositionReportRecordFactory extends AVLRecordFactory<PositionReport> {
+public class PositionReportRecordFactory extends IRecordFactory<PositionReport> {
 
-  static class FieldDef extends AVLFieldDefinition<PositionReport> {
-    public FieldDef(int length, String name, AVLRecordFieldSetter<PositionReport> setter) {
+  static class FieldDef extends IFieldDefinition<PositionReport> {
+    public FieldDef(int length, String name, IRecordFieldSetter<PositionReport> setter) {
       super(length, name, setter);
     }
   }
   
-  private static AVLFieldDefinition[] fields = {
+  private static IFieldDefinition[] fields = {
     new FieldDef(4, "record type", null),
     new FieldDef(4, "sequence number", new PositionReportFieldSetter() {
       public void setField(PositionReport record) {
@@ -211,7 +211,7 @@ public class PositionReportRecordFactory extends AVLRecordFactory<PositionReport
   };
   
   @Override
-  public AVLFieldDefinition<PositionReport>[] getFields() {
+  public IFieldDefinition<PositionReport>[] getFields() {
     return fields;
   }
 
