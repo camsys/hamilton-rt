@@ -142,7 +142,7 @@ public class HamiltonToGtfsRealtimeService implements ServletContextAware {
   Connection getConnection(Map<String, String> properties) throws Exception {
     if (properties == null) return null;
     
-    _log.info("db_url=" + properties.get(DB_URL));
+//    _log.info("db_url=" + properties.get(DB_URL));
     return DriverManager.getConnection(properties.get(DB_URL));
   }
   
@@ -172,7 +172,7 @@ public class HamiltonToGtfsRealtimeService implements ServletContextAware {
       VehicleRecord vehicleRecord = _avlTranslator.translate(record);
       output.add(vehicleRecord);
     }
-    _log.info("translated " + output.size() + " records.");
+//    _log.info("translated " + output.size() + " records.");
     return output;
   }
   
@@ -206,7 +206,7 @@ public class HamiltonToGtfsRealtimeService implements ServletContextAware {
       }
       
       writeGtfsRealtimeOutput(records);
-      _log.info("found " + (records==null?"NuLl":records.size()) + " updates");
+//      _log.info("found " + (records==null?"NuLl":records.size()) + " updates");
     } catch (Exception any) {
       _log.error("exception writing GTFS data:", any);
     } finally {

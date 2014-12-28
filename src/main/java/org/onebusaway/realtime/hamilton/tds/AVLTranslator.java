@@ -118,11 +118,16 @@ public class AVLTranslator {
    }
    String tripId = stuff.getTripId();
    boolean isFrequency = stuff.isFrequency();
-
    if (tripId == null) {
      return null;
    }
-   String stopId = getClosestStopId(record, System.currentTimeMillis(), tripId);
+   if (stuff.getStopId() == null) {
+     String stopId = getClosestStopId(record, System.currentTimeMillis(), tripId);
+//     _log.error("stopId=" + stopId);
+     v.setStopId(stopId);
+   } else {
+     v.setStopId(stuff.getStopId());
+   }
    v.setFrequency(isFrequency);
    
    String routeId = tripId.split("_")[2];  
@@ -153,7 +158,6 @@ public class AVLTranslator {
     
     v.setTripId(tripId);
     v.setRouteId(routeId);
-    v.setStopId(stopId);
 //    v.setStopId(findClosestStopId(record, tripId));
 //    if (location != null) {
 //      AgencyAndId tripId = location.getActiveTrip().getTrip().getId();
@@ -182,17 +186,13 @@ public class AVLTranslator {
     }
     return null;
   }
-  private String findClosestStopId(DBAVLRecord record, String tripId) {
-//    return "PAV_1034";
-    return null;
-  }
   
   TripStuff getTripStartingAt(DBAVLRecord record, long currentTime) {
-    return getTripStartingAt(currentTime, ""+record.getId(), record.getReportDate(), record.getLogonTripDate(), record.getLogonTrip(), record.getLogonRoute());
+    return getTripStartingAt(currentTime, ""+record.getId(), record.getReportDate(), record.getLogonTripDate(), record.getLogonTrip(), record.getLogonRoute(), record.getLat(), record.getLon());
   }
   
   TripStuff getTripStartingAt(PositionReport pr, long currentTime) {
-    return getTripStartingAt(currentTime, pr.getCellId(), toReportDate(currentTime), toLogonDate(currentTime), pr.getOperatorId(), pr.getCellId());
+    return getTripStartingAt(currentTime, pr.getCellId(), toReportDate(currentTime), toLogonDate(currentTime), pr.getOperatorId(), pr.getCellId(), pr.getLat(), pr.getLon());
   }
   
   private Date toLogonDate(long currentTime) {
@@ -204,7 +204,7 @@ public class AVLTranslator {
     return null;
   }
   // package private for unit tests  
-  TripStuff  getTripStartingAt(long currentTime, String id, Date reportDate, Date logonTripDate, String logonTrip, String logonRoute) {
+  TripStuff  getTripStartingAt(long currentTime, String id, Date reportDate, Date logonTripDate, String logonTrip, String logonRoute, Double lat, Double lon) {
     _log.debug("reportdate=" + reportDate + "; logonDate=" + logonTripDate);
     
     // test age of record
@@ -240,7 +240,7 @@ public class AVLTranslator {
 //            _log.info("tripRouteId=" + tripRouteId);
             if (fuzzyRoute != null && fuzzyRoute.equals(tripRouteId)) {
 //              _log.info("match for trip=" + trip.getTrip().getId().toString());
-              return new TripStuff(trip.getTrip().getId().toString(), false);
+              return new TripStuff(trip.getTrip().getId().toString(), false, null);
 //              return null;
             }
           }
@@ -273,7 +273,8 @@ public class AVLTranslator {
               }
               if (frequencyStartTime == logonStartTime) {
 //                _log.info("match for trip=" + tripId);
-                return new TripStuff(tripId, true);
+                String stopId = findNextStop(block, trip, lat, lon);
+                return new TripStuff(tripId, true, stopId);
               }
             }
           }
@@ -285,6 +286,17 @@ public class AVLTranslator {
     return null;
   }
 
+private String findNextStop(BlockInstance block, BlockTripEntry trip, double lat, double lon) {
+  ScheduledBlockLocation closestStopLocation = findClosestStopSequence(block, trip.getTrip(), lat, lon);
+  StopTimeInfo lastStu = null; 
+  if (closestStopLocation == null || closestStopLocation.getActiveTrip() == null || closestStopLocation.getNextStop() == null) {
+    _log.error("no close stops for trip=" + trip.toString());
+    return null;
+  }
+  
+  String stopId = closestStopLocation.getNextStop().getStopTime().getStop().getId().toString();
+  return stopId;
+}
 //  List<TripInfo> getPotentialTrips(String tripStart, String fuzzyRunRoute, String serviceDate, DBAVLRecord avlRecord) {
 ////    _log.info("fuzzyRunRoute=" + fuzzyRunRoute);
 //  // we were not able to match the exact trip
@@ -461,15 +473,20 @@ public class AVLTranslator {
   private String hour(long blockDeparture) {
     return "" + (blockDeparture/3600) + ":" + (blockDeparture/60)%60;
   }
+  
   private ScheduledBlockLocation findClosestStopSequence(BlockInstance block,
       TripEntry trip, DBAVLRecord avlRecord) {
+    return findClosestStopSequence(block, trip, avlRecord.getLat(), avlRecord.getLon());
+  }  
+  private ScheduledBlockLocation findClosestStopSequence(BlockInstance block,
+      TripEntry trip, double lat, double lon) {
     double minDistanceAway = Double.POSITIVE_INFINITY;
     int count = 0;
     int stopSequence = 0;
 //    double minDistanceAlongTrip = 0;
     double distanceAlongTrip = 0;
     double bestDistanceAway = 0;
-    String vehicleId = ""+avlRecord.getId();
+//    String vehicleId = ""+avlRecord.getId();
     ScheduledBlockLocation lastLocation = null;
     
 //    if (updates.containsKey(vehicleId)) {
@@ -479,13 +496,13 @@ public class AVLTranslator {
 //    }
     
     for (StopTimeEntry st : trip.getStopTimes()) {
-      double distanceAway = SphericalGeometryLibrary.distance(avlRecord.getLat(), avlRecord.getLon(), 
+      double distanceAway = SphericalGeometryLibrary.distance(lat, lon, 
           st.getStop().getStopLat(), st.getStop().getStopLon());
       if (distanceAway < minDistanceAway) {
         minDistanceAway = distanceAway;
         bestDistanceAway = distanceAway;
          ScheduledBlockLocation blockLocation = _geospatialService.getBestScheduledBlockLocationForLocation(block, 
-            new CoordinatePoint(avlRecord.getLat(), avlRecord.getLon()), System.currentTimeMillis(), 0, block.getBlock().getTotalBlockDistance());
+            new CoordinatePoint(lat, lon), System.currentTimeMillis(), 0, block.getBlock().getTotalBlockDistance());
          distanceAlongTrip = blockLocation.getDistanceAlongBlock();
          // only allow this update if its progress along the trip
            stopSequence = count;
@@ -499,11 +516,11 @@ public class AVLTranslator {
     
     if (/*distanceAlongTrip > minDistanceAlongTrip*/ true) {
       // ensure forward progress
-      VehicleUpdate vi = new VehicleUpdate(vehicleId, trip.getId().toString(), distanceAlongTrip);
+//      VehicleUpdate vi = new VehicleUpdate(vehicleId, trip.getId().toString(), distanceAlongTrip);
       if (lastLocation != null) {
         _log.debug("scheduled stop=" + lastLocation.getNextStop() + " has distanceAway=" + bestDistanceAway);
       }
-      _log.debug(vi.toString());
+//      _log.debug(vi.toString());
 //      updates.put(vehicleId, vi);
       
       return lastLocation;
@@ -701,15 +718,20 @@ public class AVLTranslator {
   private static class TripStuff {
     private String tripId;
     private boolean isFrequency;
-    public TripStuff(String tripId, boolean isFrequency) {
+    private String stopId;
+    public TripStuff(String tripId, boolean isFrequency, String stopId) {
       this.tripId = tripId;
       this.isFrequency = isFrequency;
+      this.stopId = stopId;
     }
     public String getTripId() {
       return tripId;
     }
     public boolean isFrequency() {
       return isFrequency;
+    }
+    public String getStopId() {
+      return stopId;
     }
   }
 }
