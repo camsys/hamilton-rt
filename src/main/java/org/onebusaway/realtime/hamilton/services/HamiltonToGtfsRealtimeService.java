@@ -20,6 +20,12 @@ import javax.annotation.PreDestroy;
 import javax.inject.Singleton;
 import javax.servlet.ServletContext;
 
+import org.apache.commons.dbcp.ConnectionFactory;
+import org.apache.commons.dbcp.DriverConnectionFactory;
+import org.apache.commons.dbcp.DriverManagerConnectionFactory;
+import org.apache.commons.dbcp.PoolableConnectionFactory;
+import org.apache.commons.dbcp.PoolingDataSource;
+import org.apache.commons.pool.impl.GenericObjectPool;
 import org.onebusaway.gtfs_realtime.exporter.GtfsRealtimeLibrary;
 import org.onebusaway.gtfs_realtime.exporter.GtfsRealtimeMutableProvider;
 import org.onebusaway.gtfs_realtime.exporter.GtfsRealtimeProviderImpl;
@@ -50,6 +56,10 @@ import com.google.transit.realtime.GtfsRealtimeOneBusAway.OneBusAwayTripUpdate;
 
 public class HamiltonToGtfsRealtimeService implements ServletContextAware {
   public static final String DB_URL = "url";
+  private static final String DB_USERNAME = "username";
+  private static final String DB_PASSWORD = "password";
+  private static final String DB_HEALTH_QUERY = "select count(id) from tblbuses;";
+
   public static final String QUERY_STRING = "select ID as Id, BusID as busId, RptTime as reportTime, "
       + "LatDD as lat, LonDD as lon, LogonRoute as logonRoute, LogonTrip as logonTrip, "
       + "BusNum as busNumber, RptDate as reportDate from tblbuses;";
@@ -57,6 +67,8 @@ public class HamiltonToGtfsRealtimeService implements ServletContextAware {
   private final String TRIP_UPDATE_PREFIX = "trip_update_";
   private final String VEHICLE_POSITION_PREFIX = "vehicle_position_";
   private static final Logger _log = LoggerFactory.getLogger(HamiltonToGtfsRealtimeService.class);
+  private static final int MAX_ACTIVE_CONNECTIONS = 20;
+  private static final int MAX_IDLE_CONNECTION = 120000;
   private AVLTranslator _avlTranslator = null;
   private GtfsRealtimeMutableProvider _gtfsRealtimeProvider;
   private ScheduledExecutorService _refreshExecutor;
@@ -64,6 +76,9 @@ public class HamiltonToGtfsRealtimeService implements ServletContextAware {
   private String _url = null;
   private VehicleUpdateService _vehicleUpdateService;
   private int _refreshInterval = 15;
+  private PoolingDataSource _dataSource = null;
+  private String _username;
+  private String _password;
 
   public void setRefreshInterval(int interval) {
    _refreshInterval = interval; 
@@ -88,13 +103,13 @@ public class HamiltonToGtfsRealtimeService implements ServletContextAware {
   public void start() throws Exception {
     _log.info("starting GTFS-realtime service");
     if (_gtfsRealtimeProvider != null) {
-      Class.forName("com.mysql.jdbc.Driver").newInstance();
+//      Class.forName("com.mysql.jdbc.Driver").newInstance();
       _refreshExecutor = Executors.newSingleThreadScheduledExecutor();
       _refreshExecutor.scheduleAtFixedRate(new RefreshTransitData(), 0,
           _refreshInterval, TimeUnit.SECONDS);
       
       _delayExecutor = Executors.newSingleThreadScheduledExecutor();
-      _delayExecutor.scheduleAtFixedRate(new DelayThread(), _refreshInterval, _refreshInterval/4, TimeUnit.SECONDS);
+      _delayExecutor.scheduleAtFixedRate(new DelayThread(), _refreshInterval*200, _refreshInterval/4, TimeUnit.SECONDS);
     } else {
       _log.error("Testing mode.  RefreshInterval ignored!");
 
@@ -135,26 +150,68 @@ public class HamiltonToGtfsRealtimeService implements ServletContextAware {
     }
     HashMap<String, String> properties = new HashMap<String, String>();
     properties.put(DB_URL, _url);
+    properties.put(DB_USERNAME, _username);
+    properties.put(DB_PASSWORD, _password);
     return properties;
   }
   
   // package private for unit tests
   Connection getConnection(Map<String, String> properties) throws Exception {
     if (properties == null) return null;
-    
-//    _log.info("db_url=" + properties.get(DB_URL));
-    return DriverManager.getConnection(properties.get(DB_URL));
+    if (_dataSource == null) {
+      _log.info("building connection pool");
+      GenericObjectPool connectionPool = new GenericObjectPool(null, 
+          MAX_ACTIVE_CONNECTIONS,
+          GenericObjectPool.WHEN_EXHAUSTED_FAIL,
+          3000 /*maxWait*/,
+          MAX_IDLE_CONNECTION,
+          false /*test on borrow*/,
+          false /*test on return*/,
+          60000 /*time between evictions*/,
+          1 /*tests per eviction run*/,
+          30000 /*min evictable time*/,
+          true /*test while idle*/);
+      _log.info("building connection factory");
+      _log.info("url=" + properties.get(DB_URL) + ", username=" + properties.get(DB_USERNAME) + ", password=" + properties.get(DB_PASSWORD));
+      ConnectionFactory connectionFactory = new DriverManagerConnectionFactory(properties.get(DB_URL),
+          properties.get(DB_USERNAME), properties.get(DB_PASSWORD));
+      _log.info("building pool");
+      PoolableConnectionFactory poolableConnectionFactory 
+      = new PoolableConnectionFactory(connectionFactory, 
+          connectionPool,
+          null/*statement query pool*/,
+          null/*DB_HEALTH_QUERY*//*test statement*/,
+          false/*default read only*/,
+          true/*default auto commit*/);
+      _log.info("building datasource");
+      _dataSource = new PoolingDataSource(connectionPool);
+      _log.info("loading driver");
+      Class driverClass = Class.forName("com.mysql.jdbc.Driver");
+      _log.info("priming connections");
+      _dataSource.getConnection();
+    }
+    _log.info("returning connection");
+    Connection connection = _dataSource.getConnection(/*properties.get(DB_USERNAME), properties.get(DB_PASSWORD)*/);
+    _log.info("connection=" + connection);
+    return connection;
   }
   
   List<DBAVLRecord> getAVLRecords(Connection connection) throws Exception {
     ResultSet rs = null;
     Statement statement = null;
     try {
-	if (connection == null) return null;
-	statement = connection.createStatement(ResultSet.TYPE_SCROLL_SENSITIVE, ResultSet.CONCUR_UPDATABLE);
-	rs = statement.executeQuery(QUERY_STRING);
-	ResultSetMapper mapper = new ResultSetMapper();
-	return mapper.map(rs);
+      if (connection == null) {
+        _log.error("no connection");
+        return null;
+      }
+      _log.error("creating statement");
+      statement = connection.createStatement(ResultSet.TYPE_SCROLL_SENSITIVE,
+          ResultSet.CONCUR_UPDATABLE);
+      _log.error("executing statement");
+      rs = statement.executeQuery(QUERY_STRING);
+      ResultSetMapper mapper = new ResultSetMapper();
+      _log.error("returning results");
+      return mapper.map(rs);
     } finally {
       if (rs != null) {
         rs.close();
@@ -194,7 +251,10 @@ public class HamiltonToGtfsRealtimeService implements ServletContextAware {
   public void writeGtfsRealtimeOutput() throws Exception {
     Connection conn = null;
     try {
+      _log.error("getting connection");
       conn = getConnection(getConnectionProperties());
+      _log.error("back from getConnection");
+      _log.error("got connection=" + conn);
       List<VehicleRecord> records = new ArrayList<VehicleRecord>();
       List<VehicleRecord> blockRecords = getBlockRecords(getAVLRecords(conn));
       if (blockRecords != null) {
@@ -210,13 +270,13 @@ public class HamiltonToGtfsRealtimeService implements ServletContextAware {
     } catch (Exception any) {
       _log.error("exception writing GTFS data:", any);
     } finally {
-      try {
-        if (conn != null) {
-          conn.close();
-        }
-      } catch (Exception any) {
-        // bury
-      }
+//      try {
+//        if (conn != null) {
+//          conn.close();
+//        }
+//      } catch (Exception any) {
+//        // bury
+//      }
     }
   }
   
@@ -418,6 +478,15 @@ public class HamiltonToGtfsRealtimeService implements ServletContextAware {
       } else {
         _log.warn("missing expected init param: hamilton.jdbc");
       }
+      String username = context.getInitParameter("hamilton.username");
+      if (username != null) {
+        _username = username;
+      }
+      String password = context.getInitParameter("hamilton.password");
+      if (password != null) {
+        _password = password;
+      }
+
     }
   }
 
