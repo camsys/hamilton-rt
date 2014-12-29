@@ -66,7 +66,7 @@ public class HamiltonToGtfsRealtimeService implements ServletContextAware {
   private ScheduledExecutorService _delayExecutor;
   private String _url = null;
   private VehicleUpdateService _vehicleUpdateService;
-  private int _refreshInterval = 15;
+  private int _refreshInterval = 30;
   private PoolingDataSource _dataSource = null;
   private String _username;
   private String _password;
@@ -250,6 +250,7 @@ public class HamiltonToGtfsRealtimeService implements ServletContextAware {
       List<VehicleRecord> vuRecords = _vehicleUpdateService.getRecentVehicleRecords();
       if (vuRecords != null) {
         records.addAll(vuRecords);  
+        _log.info("added " + vuRecords.size() + " vehicle records");
       }
       
       writeGtfsRealtimeOutput(records);
@@ -321,35 +322,17 @@ public class HamiltonToGtfsRealtimeService implements ServletContextAware {
       /**
        * StopTime Update
        */
-      StopTimeUpdate.Builder stopTimeUpdate = StopTimeUpdate.newBuilder();
-      
       if (record.isFrequency()) {
-          stopTimeUpdate.setStopId(cleanStopId(stopId));
-          arrival.setTime(System.currentTimeMillis()/1000); // TODO HACK
-          arrival.setUncertainty(300);
-          stopTimeUpdate.setArrival(arrival);
-          stopTimeUpdateSet.add(stopTimeUpdate.build());
-
-      } else {
-        if (stopId != null) {
-          arrival.setDelay(delay);
-          arrival.setUncertainty(30);
-        }
-        if (seq != 0) {
-          stopTimeUpdate.setStopSequence(seq);
-        }
-        if (stopId != null) {
-          stopTimeUpdate.setStopId(cleanStopId(stopId));
-        }
+      
+        StopTimeUpdate.Builder stopTimeUpdate = StopTimeUpdate.newBuilder();
+      
+        stopTimeUpdate.setStopId(cleanStopId(stopId));
+        arrival.setTime(System.currentTimeMillis()/1000); // TODO HACK
+        arrival.setUncertainty(300);
         stopTimeUpdate.setArrival(arrival);
-        // Google requested adding departure delays for Google Transit (Issue #7).
-        // Since we don't have explicit departure delay info from OrbCAD,
-        // at the suggestion of Google we will just use arrival delay as a substitute
-        stopTimeUpdate.setDeparture(arrival);  
-        
-        if (stopId != null) {
-          stopTimeUpdateSet.add(stopTimeUpdate.build());
-        }
+        stopTimeUpdateSet.add(stopTimeUpdate.build());
+
+        stopTimeUpdateSet.add(stopTimeUpdate.build());
       }
 
       /**

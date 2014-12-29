@@ -46,6 +46,7 @@ import org.onebusaway.transit_data_federation.services.realtime.BlockLocation;
 import org.onebusaway.transit_data_federation.services.realtime.BlockLocationService;
 import org.onebusaway.transit_data_federation.services.transit_graph.BlockTripEntry;
 import org.onebusaway.transit_data_federation.services.transit_graph.FrequencyEntry;
+import org.onebusaway.transit_data_federation.services.transit_graph.StopEntry;
 import org.onebusaway.transit_data_federation.services.transit_graph.StopTimeEntry;
 import org.onebusaway.transit_data_federation.services.transit_graph.TripEntry;
 import org.slf4j.Logger;
@@ -135,7 +136,7 @@ public class AVLTranslator {
 //    BlockLocation location = tripInfo.getBlockLocation();
 //    v.setStopTimeInfos(tripInfo.getStopTimeInfos());
 //    v.setFrequency(tripInfo.isFrequency());
-    v.setVehicleId("" + record.getId());
+    v.setVehicleId("" + record.getBusId());
 //    if (location != null) {
 //      v.setDelay((int)location.getScheduleDeviation());
 //      v.setBearing((int)location.getLastKnownOrientation());
@@ -188,7 +189,7 @@ public class AVLTranslator {
   }
   
   TripStuff getTripStartingAt(DBAVLRecord record, long currentTime) {
-    return getTripStartingAt(currentTime, ""+record.getId(), record.getReportDate(), record.getLogonTripDate(), record.getLogonTrip(), record.getLogonRoute(), record.getLat(), record.getLon());
+    return getTripStartingAt(currentTime, ""+record.getBusId(), record.getReportDate(), record.getLogonTripDate(), record.getLogonTrip(), record.getLogonRoute(), record.getLat(), record.getLon());
   }
   
   TripStuff getTripStartingAt(PositionReport pr, long currentTime) {
@@ -205,11 +206,16 @@ public class AVLTranslator {
   }
   // package private for unit tests  
   TripStuff  getTripStartingAt(long currentTime, String id, Date reportDate, Date logonTripDate, String logonTrip, String logonRoute, Double lat, Double lon) {
-    _log.debug("reportdate=" + reportDate + "; logonDate=" + logonTripDate);
+//    _log.info("reportdate=" + reportDate + "; logonDate=" + logonTripDate);
     
     // test age of record
     if (reportDate == null || logonTripDate == null)
       return null;
+    
+    if (reportDate.getDay() != logonTripDate.getDay()) {
+      _log.info("discarding old record for id=" + id);
+      return null;
+    }
     
     if (Math.abs(currentTime - reportDate.getTime()) > 10 * 60 * 1000) {
       _log.debug("record " + id + " too old at " + reportDate);
@@ -239,9 +245,20 @@ public class AVLTranslator {
             String tripRouteId = getRouteNameFromRouteId(trip.getTrip().getRoute().getId().toString());
 //            _log.info("tripRouteId=" + tripRouteId);
             if (fuzzyRoute != null && fuzzyRoute.equals(tripRouteId)) {
-//              _log.info("match for trip=" + trip.getTrip().getId().toString());
-              return new TripStuff(trip.getTrip().getId().toString(), false, null);
-//              return null;
+              //xxxx
+              ScheduledBlockLocation blockLocation = _geospatialService.getBestScheduledBlockLocationForLocation(block, 
+                  new CoordinatePoint(lat, lon), System.currentTimeMillis(), 0, block.getBlock().getTotalBlockDistance());
+              StopEntry stop = blockLocation.getClosestStop().getStopTime().getStop();
+              double stopLat = stop.getStopLat();
+              double stopLon = stop.getStopLon();
+              double distanceAway = SphericalGeometryLibrary.distance(lat, lon, 
+                  stopLat, stopLon);
+//              _log.info(id + " closest stop is " + distanceAway + " away");
+              if (distanceAway < 500) { 
+                return new TripStuff(trip.getTrip().getId().toString(), false, null);
+              } else {
+                _log.info(id + " closest stop["+ stop.getId().toString() + "] is " + distanceAway + " away");
+              }
             }
           }
         } 
@@ -284,6 +301,21 @@ public class AVLTranslator {
     }// end agency
     
     return null;
+  }
+
+private String getDirectionFromLogonRoute(String logonRoute) {
+  if (logonRoute.endsWith("A"))
+    return "1";
+  return "0";
+  }
+private String getDirectionFromTripId(String tripId) {
+  if (tripId == null) return null;
+  String direction = tripId.split("_")[2].replaceAll("\\d", "");
+  if ("I".equals(direction))
+    return "1";
+  if ("O".equals(direction))
+    return "0";
+  return direction;
   }
 
 private String findNextStop(BlockInstance block, BlockTripEntry trip, double lat, double lon) {
