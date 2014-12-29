@@ -1,27 +1,23 @@
 package org.onebusaway.realtime.hamilton.services;
 
 import java.sql.Connection;
-import java.sql.DriverManager;
 import java.sql.ResultSet;
-import java.sql.SQLException;
 import java.sql.Statement;
 import java.sql.Timestamp;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.HashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
 import javax.annotation.PostConstruct;
 import javax.annotation.PreDestroy;
-import javax.inject.Singleton;
 import javax.servlet.ServletContext;
 
 import org.apache.commons.dbcp.ConnectionFactory;
-import org.apache.commons.dbcp.DriverConnectionFactory;
 import org.apache.commons.dbcp.DriverManagerConnectionFactory;
 import org.apache.commons.dbcp.PoolableConnectionFactory;
 import org.apache.commons.dbcp.PoolingDataSource;
@@ -30,7 +26,6 @@ import org.onebusaway.gtfs_realtime.exporter.GtfsRealtimeLibrary;
 import org.onebusaway.gtfs_realtime.exporter.GtfsRealtimeMutableProvider;
 import org.onebusaway.gtfs_realtime.exporter.GtfsRealtimeProviderImpl;
 import org.onebusaway.realtime.hamilton.model.DBAVLRecord;
-import org.onebusaway.realtime.hamilton.model.StopTimeInfo;
 import org.onebusaway.realtime.hamilton.model.VehicleRecord;
 import org.onebusaway.realtime.hamilton.sql.ResultSetMapper;
 import org.onebusaway.realtime.hamilton.tds.AVLTranslator;
@@ -40,19 +35,15 @@ import org.springframework.context.ApplicationContext;
 import org.springframework.context.support.ClassPathXmlApplicationContext;
 import org.springframework.web.context.ServletContextAware;
 
-import com.google.inject.Inject;
 import com.google.transit.realtime.GtfsRealtime.FeedEntity;
 import com.google.transit.realtime.GtfsRealtime.FeedMessage;
 import com.google.transit.realtime.GtfsRealtime.Position;
 import com.google.transit.realtime.GtfsRealtime.TripDescriptor;
-import com.google.transit.realtime.GtfsRealtime.TripDescriptor.ScheduleRelationship;
 import com.google.transit.realtime.GtfsRealtime.TripUpdate;
-import com.google.transit.realtime.GtfsRealtime.VehicleDescriptor;
-import com.google.transit.realtime.GtfsRealtime.VehiclePosition;
 import com.google.transit.realtime.GtfsRealtime.TripUpdate.StopTimeEvent;
 import com.google.transit.realtime.GtfsRealtime.TripUpdate.StopTimeUpdate;
-import com.google.transit.realtime.GtfsRealtimeOneBusAway;
-import com.google.transit.realtime.GtfsRealtimeOneBusAway.OneBusAwayTripUpdate;
+import com.google.transit.realtime.GtfsRealtime.VehicleDescriptor;
+import com.google.transit.realtime.GtfsRealtime.VehiclePosition;
 
 public class HamiltonToGtfsRealtimeService implements ServletContextAware {
   public static final String DB_URL = "url";
@@ -180,19 +171,15 @@ public class HamiltonToGtfsRealtimeService implements ServletContextAware {
       = new PoolableConnectionFactory(connectionFactory, 
           connectionPool,
           null/*statement query pool*/,
-          null/*DB_HEALTH_QUERY*//*test statement*/,
-          false/*default read only*/,
-          true/*default auto commit*/);
+          DB_HEALTH_QUERY/*test statement*/,
+          true/*default read only*/,
+          false/*default auto commit*/);
       _log.info("building datasource");
       _dataSource = new PoolingDataSource(connectionPool);
       _log.info("loading driver");
       Class driverClass = Class.forName("com.mysql.jdbc.Driver");
-      _log.info("priming connections");
-      _dataSource.getConnection();
     }
-    _log.info("returning connection");
     Connection connection = _dataSource.getConnection(/*properties.get(DB_USERNAME), properties.get(DB_PASSWORD)*/);
-    _log.info("connection=" + connection);
     return connection;
   }
   
@@ -204,17 +191,18 @@ public class HamiltonToGtfsRealtimeService implements ServletContextAware {
         _log.error("no connection");
         return null;
       }
-      _log.error("creating statement");
       statement = connection.createStatement(ResultSet.TYPE_SCROLL_SENSITIVE,
           ResultSet.CONCUR_UPDATABLE);
-      _log.error("executing statement");
       rs = statement.executeQuery(QUERY_STRING);
       ResultSetMapper mapper = new ResultSetMapper();
-      _log.error("returning results");
       return mapper.map(rs);
     } finally {
       if (rs != null) {
-        rs.close();
+        try {
+          rs.close();
+        } catch (Exception any) {
+          _log.info("issue closing resultset:", any);
+        }
       }
       if (statement != null) {
         statement.close();
@@ -227,9 +215,11 @@ public class HamiltonToGtfsRealtimeService implements ServletContextAware {
     List<VehicleRecord> output = new ArrayList<VehicleRecord>();
     for (DBAVLRecord record: input) {
       VehicleRecord vehicleRecord = _avlTranslator.translate(record);
-      output.add(vehicleRecord);
+      if (vehicleRecord != null) {
+        output.add(vehicleRecord);
+      }
     }
-//    _log.info("translated " + output.size() + " records.");
+    _log.info("translated " + input.size()+ " input records into " + output.size() + " records.");
     return output;
   }
   
@@ -251,10 +241,7 @@ public class HamiltonToGtfsRealtimeService implements ServletContextAware {
   public void writeGtfsRealtimeOutput() throws Exception {
     Connection conn = null;
     try {
-      _log.error("getting connection");
       conn = getConnection(getConnectionProperties());
-      _log.error("back from getConnection");
-      _log.error("got connection=" + conn);
       List<VehicleRecord> records = new ArrayList<VehicleRecord>();
       List<VehicleRecord> blockRecords = getBlockRecords(getAVLRecords(conn));
       if (blockRecords != null) {
@@ -270,13 +257,13 @@ public class HamiltonToGtfsRealtimeService implements ServletContextAware {
     } catch (Exception any) {
       _log.error("exception writing GTFS data:", any);
     } finally {
-//      try {
-//        if (conn != null) {
-//          conn.close();
-//        }
-//      } catch (Exception any) {
-//        // bury
-//      }
+      try {
+        if (conn != null) {
+          conn.close();
+        }
+      } catch (Exception any) {
+        _log.info("issue closing connection:", any);
+      }
     }
   }
   
