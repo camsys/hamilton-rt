@@ -167,7 +167,7 @@ public class PositionReportRecordFactory extends IRecordFactory<PositionReport> 
     new FieldDef(1, "GPS antenna", null),
     new FieldDef(10, "lat", new PositionReportFieldSetter() {
       public void setField(PositionReport record) {
-        record.setLat(getDecimalFixedPoint(3));
+        record.setLat(getDecimalFixedPoint(2));
       }
     }),
     new FieldDef(11, "lon", new PositionReportFieldSetter() {
@@ -207,7 +207,20 @@ public class PositionReportRecordFactory extends IRecordFactory<PositionReport> 
         record.setDistanceTravelled(getDecimalFixedPoint(3));
       }
     }),
-    new FieldDef(1, "reserved", null)
+    new FieldDef(4, "unknown", null), // we have a few chars missing
+    new FieldDef(12, "id", new PositionReportFieldSetter() {
+      public void setField(PositionReport record) {
+        record.setDriverId(getStringData());
+      }
+    }),
+    new FieldDef(1, "reserved", null),
+    new FieldDef(4, "spacer", null),
+    new FieldDef(8, "id", new PositionReportFieldSetter() {
+      public void setField(PositionReport record) {
+        record.setId(getStringData());
+      }
+    })
+    
   };
   
   @Override

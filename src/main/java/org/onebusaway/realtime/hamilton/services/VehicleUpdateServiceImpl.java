@@ -84,7 +84,7 @@ public class VehicleUpdateServiceImpl implements VehicleUpdateService {
     int trail = inputStream.read();
     byte[] muxArray = {(byte) stx, (byte) byteMarker, (byte) size, (byte) trail};
     inputStream.reset();
-    _log.info("dispatch byteMarker=" + byteMarker);
+    _log.debug("dispatch byteMarker=" + byteMarker);
     // check if logon
     if (byteMarker == 81) {
       _log.info("size=" + size);
@@ -112,18 +112,20 @@ public class VehicleUpdateServiceImpl implements VehicleUpdateService {
       // GPS Update message?
       String mux = new String(muxArray);
       if ("RTCP".equals(mux)) {
-        _log.info("RTCP found!");
+        _log.debug("RTCP found!");
         ByteArrayOutputStream baos = new ByteArrayOutputStream();
         byte buff[] = new byte[135]; 
         IOUtils.read(inputStream, buff, 0, 135);
         PositionReport record = (PositionReport) recieveGPSUpdate(buff);
-        _log.error("found operator" + record.getOperatorId() 
-            + " at " + record.getLat() + ", " + record.getLon() 
-            + " travelling at "  + record.getSpeed());
+        _log.info(record.toString());
+//        _log.error("found [" + record.getId() + "] operator " + record.getOperatorId()
+//            + " driverId " + record.getDriverId()
+//            + " at " + record.getLat() + ", " + record.getLon() 
+//            + " travelling at "  + record.getSpeed());
         addPositionReport(record);
         return true;
       } else {
-        _log.info("unexpected mux=" + mux + ":" 
+        _log.debug("unexpected mux=" + mux + ":" 
       + "\\x" + Integer.toHexString(stx)
       + "\\x" + Integer.toHexString(byteMarker)
       + "\\x" + Integer.toHexString(size)

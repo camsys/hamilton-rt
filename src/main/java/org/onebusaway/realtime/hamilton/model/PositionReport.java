@@ -20,6 +20,7 @@ public class PositionReport implements IRecord {
   int maxSpeed;
   double distanceTravelled;
   String driverId;
+  String id;
   
   public int getSequenceNumber() {
     return sequenceNumber;
@@ -155,5 +156,41 @@ public class PositionReport implements IRecord {
   public void setDistanceTravelled(float decimalFixedPoint) {
     this.distanceTravelled = decimalFixedPoint;
   }
+
+  public void setDriverId(String id) {
+    this.driverId= id;
+  }
+  public String getDriverId() {
+    return driverId;
+  }
   
+  public void setId(String id) {
+    this.id = id;
+  }
+  public String getId() {
+    return id;
+  }
+  
+  public String toString() {
+    return "{[" + id + "]"
+        + " seq=" + sequenceNumber
+    + ", triggerType=" + triggerType
+    + ", gpsTriggerWeek=" + gpsTriggerWeekNumber
+    + ", gpsTriggerSeconds=" + gpsTriggerSecondsIntoWeek
+    + ", operatorId=" + operatorId
+    + ", cellId=" + cellId
+    + ", ignition=" + ignitionFlag
+    + ", power=" + powerSourceFlag
+    + ", satellites=" + gpsSatellites
+    + ", lat=" + lat
+    + ", lon=" + lon
+    + ", gpsFixWeek=" + gpsFixWeekNumber
+    + ", gpsFixSeconds=" + gpsFixSecondsIntoWeek
+    + ", speed=" + speed
+    + ", heading=" + heading
+    + ", maxSpeed=" + maxSpeed
+    + ", distance=" + distanceTravelled
+    + ", driverId=" + driverId
+    + "}";
+  }
 }
