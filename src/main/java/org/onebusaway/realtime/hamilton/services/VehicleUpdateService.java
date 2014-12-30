@@ -6,6 +6,7 @@ import java.util.Collection;
 import java.util.List;
 
 import org.onebusaway.realtime.hamilton.model.IRecord;
+import org.onebusaway.realtime.hamilton.model.PositionReport;
 import org.onebusaway.realtime.hamilton.model.VehicleMessage;
 import org.onebusaway.realtime.hamilton.model.VehicleRecord;
 
@@ -16,5 +17,5 @@ public interface VehicleUpdateService {
   IRecord receiveWayfarerLogOnOff(byte[] byteArray);
   IRecord recieveGPSUpdate(byte[] byteArray);
   boolean dispatch(InputStream inputStream) throws Exception;
-  List<VehicleRecord> getRecentVehicleRecords();
+  List<PositionReport> getRecentVehicleRecords();
 }

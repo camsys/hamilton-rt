@@ -5,6 +5,7 @@ import java.sql.ResultSet;
 import java.sql.Statement;
 import java.sql.Timestamp;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -26,6 +27,8 @@ import org.onebusaway.gtfs_realtime.exporter.GtfsRealtimeLibrary;
 import org.onebusaway.gtfs_realtime.exporter.GtfsRealtimeMutableProvider;
 import org.onebusaway.gtfs_realtime.exporter.GtfsRealtimeProviderImpl;
 import org.onebusaway.realtime.hamilton.model.DBAVLRecord;
+import org.onebusaway.realtime.hamilton.model.Logon;
+import org.onebusaway.realtime.hamilton.model.PositionReport;
 import org.onebusaway.realtime.hamilton.model.VehicleRecord;
 import org.onebusaway.realtime.hamilton.sql.ResultSetMapper;
 import org.onebusaway.realtime.hamilton.tds.AVLTranslator;
@@ -70,6 +73,8 @@ public class HamiltonToGtfsRealtimeService implements ServletContextAware {
   private PoolingDataSource _dataSource = null;
   private String _username;
   private String _password;
+  private Map<String, Logon> vehicleIdLogonMap = new HashMap<String, Logon>();
+  private String _filterList = "4234,4235,4236";
 
   public void setRefreshInterval(int interval) {
    _refreshInterval = interval; 
@@ -243,14 +248,24 @@ public class HamiltonToGtfsRealtimeService implements ServletContextAware {
     try {
       conn = getConnection(getConnectionProperties());
       List<VehicleRecord> records = new ArrayList<VehicleRecord>();
-      List<VehicleRecord> blockRecords = getBlockRecords(getAVLRecords(conn));
+      List<DBAVLRecord> avlRecords = getAVLRecords(conn);
+      updateLogonMap(avlRecords);
+      List<VehicleRecord> blockRecords = getBlockRecords(avlRecords);
       if (blockRecords != null) {
-        records.addAll(blockRecords);
+        records.addAll(filter(blockRecords));
       }
-      List<VehicleRecord> vuRecords = _vehicleUpdateService.getRecentVehicleRecords();
-      if (vuRecords != null) {
-        records.addAll(vuRecords);  
-        _log.info("added " + vuRecords.size() + " vehicle records");
+      
+      List<PositionReport> prRecords = _vehicleUpdateService.getRecentVehicleRecords();
+      int goodRecords = 0;
+      if (prRecords != null) {
+        for (PositionReport pr : prRecords) {
+          VehicleRecord vehicleRecord = _avlTranslator.translate(pr, vehicleIdLogonMap);
+          if (vehicleRecord != null) {
+            goodRecords++;
+            records.add(vehicleRecord);
+          }
+        }
+        _log.info("added " + goodRecords + " vehicle records");
       }
       
       writeGtfsRealtimeOutput(records);
@@ -264,6 +279,27 @@ public class HamiltonToGtfsRealtimeService implements ServletContextAware {
         }
       } catch (Exception any) {
         _log.info("issue closing connection:", any);
+      }
+    }
+  }
+  
+  private List<VehicleRecord> filter(List<VehicleRecord> blockRecords) {
+    List<VehicleRecord> filtered = new ArrayList<VehicleRecord>(blockRecords.size());
+    for (VehicleRecord vr : blockRecords) {
+      if (!_filterList.contains(vr.getVehicleId())) {
+        filtered.add(vr);
+      }
+    }
+    return filtered;
+  }
+  private void updateLogonMap(List<DBAVLRecord> avlRecords) {
+    if (avlRecords == null) return;
+    for (DBAVLRecord r: avlRecords) {
+      if (r != null) {
+        Logon l = new Logon();
+        l.setRoute(r.getLogonRoute());
+        l.setTime(r.getLogonTrip());
+        this.vehicleIdLogonMap.put(""+r.getId(), l);
       }
     }
   }

@@ -24,6 +24,7 @@ import org.onebusaway.geospatial.services.SphericalGeometryLibrary;
 import org.onebusaway.gtfs.model.AgencyAndId;
 import org.onebusaway.realtime.hamilton.model.AVLRecord;
 import org.onebusaway.realtime.hamilton.model.DBAVLRecord;
+import org.onebusaway.realtime.hamilton.model.Logon;
 import org.onebusaway.realtime.hamilton.model.PositionReport;
 import org.onebusaway.realtime.hamilton.model.StopTimeInfo;
 import org.onebusaway.realtime.hamilton.model.TripInfo;
@@ -735,16 +736,21 @@ private String findNextStop(BlockInstance block, BlockTripEntry trip, double lat
     }
   }
 
-  public VehicleRecord translate(PositionReport pr) {
+  public VehicleRecord translate(PositionReport pr, Map<String, Logon> cache) {
     long currentTime = System.currentTimeMillis();
-    TripStuff stuff = this.getTripStartingAt(pr, currentTime);
-    if (stuff == null) {
-      return null;
-    }
     VehicleRecord vr = new VehicleRecord();
+    vr.setVehicleId(pr.getId());
     vr.setLat(pr.getLat());
     vr.setLon(pr.getLon());
-    return null;
+    Date now = new Date(System.currentTimeMillis());
+    Logon l = cache.get(pr.getId());
+    if (l == null) return null;
+    TripStuff stuff = this.getTripStartingAt(System.currentTimeMillis(), pr.getId(), now, now, l.getTime(), l.getRoute(), pr.getLat(), pr.getLon());
+    if (stuff == null) {
+      _log.error("could not match " + pr.getId() + " to a trip");
+    }
+    vr.setTripId(stuff.getTripId());
+    return vr;
   }
 
   private static class TripStuff {

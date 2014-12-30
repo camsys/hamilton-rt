@@ -42,7 +42,7 @@ public class VehicleUpdateServiceImpl implements VehicleUpdateService {
   protected ObjectMapper _mapper = new ObjectMapper();
   
   private Cache<String, VehicleMessage> _cache;
-  private Cache<String, VehicleRecord> _vrCache;
+  private Cache<String, PositionReport> _prCache;
 
   private int _timeout = 5; // minutes
   
@@ -69,7 +69,7 @@ public class VehicleUpdateServiceImpl implements VehicleUpdateService {
     final AnnotationIntrospector jaxb = new JaxbAnnotationIntrospector();
     _mapper.getDeserializationConfig().setAnnotationIntrospector(jaxb);
     _cache = CacheBuilder.newBuilder().expireAfterWrite(_timeout, TimeUnit.MINUTES).build();
-    _vrCache = CacheBuilder.newBuilder().expireAfterWrite(_timeout, TimeUnit.MINUTES).build();
+    _prCache = CacheBuilder.newBuilder().expireAfterWrite(_timeout, TimeUnit.MINUTES).build();
   }
   
   
@@ -146,9 +146,8 @@ public class VehicleUpdateServiceImpl implements VehicleUpdateService {
 
   
   private void addPositionReport(PositionReport pr) {
-    VehicleRecord vr = _avlTranslator.translate(pr);
-    if (vr == null) return;
-    _vrCache.put(vr.getVehicleId(), vr);
+    if (pr == null) return;
+    _prCache.put(pr.getId(), pr);
   }
 
 
@@ -181,10 +180,10 @@ public class VehicleUpdateServiceImpl implements VehicleUpdateService {
     return vehicles;
   }
   
-  public List<VehicleRecord> getRecentVehicleRecords() {
-    List<VehicleRecord> vehicles = new ArrayList<VehicleRecord>();
-    Map<String, VehicleRecord> map = _vrCache.asMap();
-    for (Entry<String, VehicleRecord> vr: map.entrySet()) {
+  public List<PositionReport> getRecentVehicleRecords() {
+    List<PositionReport> vehicles = new ArrayList<PositionReport>();
+    Map<String, PositionReport> map = _prCache.asMap();
+    for (Entry<String, PositionReport> vr: map.entrySet()) {
       vehicles.add(vr.getValue());
     }
     return vehicles;
