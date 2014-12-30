@@ -145,7 +145,8 @@ public class AVLTranslator {
 //    } else {
 //      v.setTime(new Timestamp(System.currentTimeMillis()));
 //    }
-    v.setTime(new Timestamp(System.currentTimeMillis()));
+    
+    v.setTime(new Timestamp(record.getReportDate().getTime()));
     
     v.setLat(record.getLat());
     v.setLon(record.getLon());
@@ -176,12 +177,18 @@ public class AVLTranslator {
     return v;
   }
   
+  // TODO this fakes out the closes stop by returned the last stop on the trip
   private String getClosestStopId(DBAVLRecord record, long currentTimeMillis, String tripId) {
+    return getClosestStopId(tripId);
+  }
+  
+  private String getClosestStopId(String tripId) {
     TripDetailsQueryBean query = new TripDetailsQueryBean();
     query.setTripId(tripId);
     ListBean<TripDetailsBean> tripDetails = _tds.getTripDetails(query);
     if (tripDetails != null && !tripDetails.getList().isEmpty())
     {
+      // TODO this isn't actually implemented!
       List<TripStopTimeBean> stopTimes = tripDetails.getList().get(0).getSchedule().getStopTimes();
       int lastStop = stopTimes.size()-1;
       return stopTimes.get(lastStop).getStop().getId();
@@ -193,9 +200,9 @@ public class AVLTranslator {
     return getTripStartingAt(currentTime, ""+record.getBusId(), record.getReportDate(), record.getLogonTripDate(), record.getLogonTrip(), record.getLogonRoute(), record.getLat(), record.getLon());
   }
   
-  TripStuff getTripStartingAt(PositionReport pr, long currentTime) {
-    return getTripStartingAt(currentTime, pr.getCellId(), toReportDate(currentTime), toLogonDate(currentTime), pr.getOperatorId(), pr.getCellId(), pr.getLat(), pr.getLon());
-  }
+//  TripStuff getTripStartingAt(PositionReport pr, long currentTime) {
+//    return getTripStartingAt(currentTime, pr.getCellId(), toReportDate(currentTime), toLogonDate(currentTime), pr.getOperatorId(), pr.getCellId(), pr.getLat(), pr.getLon());
+//  }
   
   private Date toLogonDate(long currentTime) {
     _fullDate.format(new Date(currentTime));
@@ -208,6 +215,8 @@ public class AVLTranslator {
   // package private for unit tests  
   TripStuff  getTripStartingAt(long currentTime, String id, Date reportDate, Date logonTripDate, String logonTrip, String logonRoute, Double lat, Double lon) {
 //    _log.info("reportdate=" + reportDate + "; logonDate=" + logonTripDate);
+    
+    List<TripStuff> stuffs = new ArrayList<TripStuff>();
     
     // test age of record
     if (reportDate == null || logonTripDate == null)
@@ -256,7 +265,8 @@ public class AVLTranslator {
                   stopLat, stopLon);
 //              _log.info(id + " closest stop is " + distanceAway + " away");
               if (distanceAway < 500) { 
-                return new TripStuff(trip.getTrip().getId().toString(), false, null);
+                stuffs.add(new TripStuff(trip.getTrip().getId().toString(), false, null, logonRoute));
+//                return new TripStuff(trip.getTrip().getId().toString(), false, null);
               } else {
                 _log.info(id + " closest stop["+ stop.getId().toString() + "] is " + distanceAway + " away");
               }
@@ -292,7 +302,7 @@ public class AVLTranslator {
               if (frequencyStartTime == logonStartTime) {
 //                _log.info("match for trip=" + tripId);
                 String stopId = findNextStop(block, trip, lat, lon);
-                return new TripStuff(tripId, true, stopId);
+                stuffs.add(new TripStuff(tripId, true, stopId, logonRoute));
               }
             }
           }
@@ -301,7 +311,78 @@ public class AVLTranslator {
       
     }// end agency
     
-    return null;
+    if (stuffs.size() > 1) {
+      _log.error("vehicle " + id + " qualifed for " + stuffs.size() + " trips:" + stuffs);
+      return selectBestTrip(stuffs, lat, lon);
+    }
+    if (stuffs.isEmpty())
+      return null;
+    
+    _log.info("vehicle " + id + " trip:" + stuffs);
+    return stuffs.get(0);
+  }
+
+private TripStuff selectBestTrip(List<TripStuff> stuffs, Double lat, Double lon) {
+  TripDetailsQueryBean query = new TripDetailsQueryBean();
+  query.setTripId(stuffs.get(0).getTripId());
+  ListBean<TripDetailsBean> tripDetails0 = _tds.getTripDetails(query);
+  query.setTripId(stuffs.get(1).getTripId());
+  ListBean<TripDetailsBean> tripDetails1 = _tds.getTripDetails(query);
+  
+  long now = (System.currentTimeMillis() - getStartOfDayInMillis(null))/1000;
+  int min0 = Integer.MAX_VALUE;
+  int seq0 = -1;
+  TripStopTimeBean stop0 = null;
+  int min1 = Integer.MAX_VALUE;
+  int seq1 = -1;
+  TripStopTimeBean stop1 = null;
+  //xxxxx
+  if (tripDetails0 != null && !tripDetails0.getList().isEmpty())
+  {
+    int i = 0;
+    List<TripStopTimeBean> stopTimes = tripDetails0.getList().get(0).getSchedule().getStopTimes();
+    for (TripStopTimeBean stopTime : stopTimes) {
+//      _log.info("now=" + now + ", arrival=" + stopTime.getArrivalTime());
+      if (Math.abs(stopTime.getArrivalTime() - now) < min0 ) {
+        min0 = (int) Math.abs(stopTime.getArrivalTime() - now);
+        seq0 = i;
+      }
+      i++;
+    }
+    if (seq0 >= 0) {
+      stop0 = stopTimes.get(seq0);
+    }
+    
+  }
+
+  if (tripDetails1 != null && !tripDetails1.getList().isEmpty())
+  {
+    int i = 0;
+    List<TripStopTimeBean> stopTimes = tripDetails1.getList().get(0).getSchedule().getStopTimes();
+    for (TripStopTimeBean stopTime : stopTimes) {
+//      _log.info("now=" + now + ", arrival=" + stopTime.getArrivalTime());
+      if (Math.abs(stopTime.getArrivalTime() - now) < min1 ) {
+        min1 = (int) Math.abs(stopTime.getArrivalTime() - now);
+        seq1 = i;
+      }
+      i++;
+    }
+    if (seq1 >= 0) {
+      stop1 = stopTimes.get(seq1);
+    }
+
+    
+  }
+
+  double distanceAway0 = SphericalGeometryLibrary.distance(lat, lon, 
+      stop0.getStop().getLat(), stop0.getStop().getLon());
+  double distanceAway1 = SphericalGeometryLibrary.distance(lat, lon, 
+      stop1.getStop().getLat(), stop1.getStop().getLon());
+
+  _log.info(stuffs.get(1) + ":" + distanceAway1 + " <= " + stuffs.get(0) + ":" + distanceAway0);
+  if (distanceAway1 <= distanceAway0)
+    return stuffs.get(1);
+  return stuffs.get(0);
   }
 
 private String getDirectionFromLogonRoute(String logonRoute) {
@@ -757,10 +838,12 @@ private String findNextStop(BlockInstance block, BlockTripEntry trip, double lat
     private String tripId;
     private boolean isFrequency;
     private String stopId;
-    public TripStuff(String tripId, boolean isFrequency, String stopId) {
+    private String routeId;
+    public TripStuff(String tripId, boolean isFrequency, String stopId, String routeId) {
       this.tripId = tripId;
       this.isFrequency = isFrequency;
       this.stopId = stopId;
+      this.routeId = routeId;
     }
     public String getTripId() {
       return tripId;
@@ -770,6 +853,9 @@ private String findNextStop(BlockInstance block, BlockTripEntry trip, double lat
     }
     public String getStopId() {
       return stopId;
+    }
+    public String toString() {
+      return "{" + tripId + "[" + routeId + "]" + "}";
     }
   }
 }
