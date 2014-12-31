@@ -265,8 +265,12 @@ public class AVLTranslator {
                   stopLat, stopLon);
 //              _log.info(id + " closest stop is " + distanceAway + " away");
               if (distanceAway < 500) { 
-                stuffs.add(new TripStuff(trip.getTrip().getId().toString(), false, null, logonRoute));
+                String logonDirection = this.getDirectionFromLogonRoute(logonRoute);
+                String tripDirection = this.getDirectionFromTripId(trip.getTrip().getId().toString());
+                if (logonDirection == null || logonDirection.equals(tripDirection)) {
+                  stuffs.add(new TripStuff(trip.getTrip().getId().toString(), false, null, logonRoute));
 //                return new TripStuff(trip.getTrip().getId().toString(), false, null);
+                }
               } else {
                 _log.info(id + " closest stop["+ stop.getId().toString() + "] is " + distanceAway + " away");
               }
@@ -387,16 +391,12 @@ private TripStuff selectBestTrip(List<TripStuff> stuffs, Double lat, Double lon)
 
 private String getDirectionFromLogonRoute(String logonRoute) {
   if (logonRoute.endsWith("A"))
-    return "1";
-  return "0";
+    return "O";
+  return "I";
   }
 private String getDirectionFromTripId(String tripId) {
   if (tripId == null) return null;
   String direction = tripId.split("_")[2].replaceAll("\\d", "");
-  if ("I".equals(direction))
-    return "1";
-  if ("O".equals(direction))
-    return "0";
   return direction;
   }
 
