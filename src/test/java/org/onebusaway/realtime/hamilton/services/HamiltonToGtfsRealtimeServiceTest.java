@@ -88,9 +88,7 @@ public class HamiltonToGtfsRealtimeServiceTest {
     assertNotNull(tds);
     translator.setTransitDataService(tds);
     translator.setBlockCalendarService(bcs);
-    translator.setBlockLocationService(bls);
     translator.setTripBeanService(tbs);
-    translator.setTripStopTimesBeanService(tstbs);
 
     
     VehicleRecord br = translator.translate(record);

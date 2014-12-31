@@ -32,9 +32,7 @@
 	<bean id="avlTranslator" class="org.onebusaway.realtime.hamilton.tds.AVLTranslator" >
 		<property name="transitDataService" ref="transitDataServiceImpl" />
 		<property name="blockCalendarService" ref="blockCalendarServiceImpl" />
-		<property name="blockLocationService" ref="blockLocationServiceImpl" />
 		<property name="tripBeanService" ref="tripBeanServiceImpl" />
-		<property name="tripStopTimesBeanService" ref="tripStopTimesBeanServiceImpl" />
 	</bean>
 	<bean id="vehicleUpdateService" class="org.onebusaway.realtime.hamilton.services.VehicleUpdateServiceImpl">
 		<property name="AVLTranslator" ref="avlTranslator" />

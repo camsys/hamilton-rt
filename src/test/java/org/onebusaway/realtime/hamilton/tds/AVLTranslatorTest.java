@@ -68,9 +68,7 @@ public class AVLTranslatorTest {
     assertNotNull(tds);
     t.setTransitDataService(tds);
     t.setBlockCalendarService(bcs);
-    t.setBlockLocationService(bls);
     t.setTripBeanService(tbs);
-    t.setTripStopTimesBeanService(tstbs);
     
     
     
@@ -273,27 +271,4 @@ public class AVLTranslatorTest {
     context.close();
   }
   
-  private void matchRoute(AVLTranslator t, String expectedRoute, String expectedTripId, List<TripInfo> tripInfos) {
-    assertNotNull(tripInfos);
-    if (tripInfos.isEmpty()) {
-      _log.error("no match for " + expectedRoute);
-//      return;
-    }
-    assertTrue(tripInfos.size() >= 1);
-
-    BlockLocation location = tripInfos.get(0).getBlockLocation();
-    AgencyAndId tripId = location.getActiveTrip().getTrip().getId();
-    String routeId = location.getActiveTrip().getTrip().getRoute().getId().toString();
-    TripBean trip = t.getTripBeanService().getTripForId(tripId);
-    String routeName = t.lookupRouteName(trip.getRoute().getShortName());
-    _log.error("route found=" + routeName
-        + " route expected=" + expectedRoute + " of " + tripInfos.size());
-    //assertEquals(expectedRoute, routeName);
-    assertTrue(routeName.contains(expectedRoute));
-    if (expectedTripId != null) {
-      assertEquals(expectedTripId, tripId);
-    } else {
-      _log.error("actualTripId=" + tripId + " for route " + expectedRoute);
-    }
-  }
 }

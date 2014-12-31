@@ -5,7 +5,6 @@ import java.sql.ResultSet;
 import java.sql.Statement;
 import java.sql.Timestamp;
 import java.util.ArrayList;
-import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -25,7 +24,6 @@ import org.apache.commons.dbcp.PoolingDataSource;
 import org.apache.commons.pool.impl.GenericObjectPool;
 import org.onebusaway.gtfs_realtime.exporter.GtfsRealtimeLibrary;
 import org.onebusaway.gtfs_realtime.exporter.GtfsRealtimeMutableProvider;
-import org.onebusaway.gtfs_realtime.exporter.GtfsRealtimeProviderImpl;
 import org.onebusaway.realtime.hamilton.model.DBAVLRecord;
 import org.onebusaway.realtime.hamilton.model.Logon;
 import org.onebusaway.realtime.hamilton.model.PositionReport;
@@ -34,8 +32,6 @@ import org.onebusaway.realtime.hamilton.sql.ResultSetMapper;
 import org.onebusaway.realtime.hamilton.tds.AVLTranslator;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.context.ApplicationContext;
-import org.springframework.context.support.ClassPathXmlApplicationContext;
 import org.springframework.web.context.ServletContextAware;
 
 import com.google.transit.realtime.GtfsRealtime.FeedEntity;
@@ -74,7 +70,8 @@ public class HamiltonToGtfsRealtimeService implements ServletContextAware {
   private String _username;
   private String _password;
   private Map<String, Logon> vehicleIdLogonMap = new HashMap<String, Logon>();
-  private String _filterList = "4234,4235,4236";
+  private String _filterList = "4234,4235,4237,4242,4246";
+  private boolean _exitOnDelay = false;
 
   public void setRefreshInterval(int interval) {
    _refreshInterval = interval; 
@@ -99,7 +96,6 @@ public class HamiltonToGtfsRealtimeService implements ServletContextAware {
   public void start() throws Exception {
     _log.info("starting GTFS-realtime service");
     if (_gtfsRealtimeProvider != null) {
-//      Class.forName("com.mysql.jdbc.Driver").newInstance();
       _refreshExecutor = Executors.newSingleThreadScheduledExecutor();
       _refreshExecutor.scheduleAtFixedRate(new RefreshTransitData(), 0,
           _refreshInterval, TimeUnit.SECONDS);
@@ -113,22 +109,6 @@ public class HamiltonToGtfsRealtimeService implements ServletContextAware {
       
     }
   }
-
-  // TODO replace with guice SpringIntegration
-  // now moved into app-context; only here for testing (TODO move to testing)
-  private void springSetup() {
-    if (this._avlTranslator == null || this._avlTranslator.getTransitDataService() == null) {
-      _log.warn("Starting spring manually");
-      String[] files = {"org/onebusaway/realtime/hamilton/application-context-webapp.xml","data-sources.xml"};
-      ApplicationContext appContext = new ClassPathXmlApplicationContext( files );
-      AVLTranslator avl = appContext.getBean(AVLTranslator.class);
-      this.setAVLTranslator(avl);
-      GtfsRealtimeMutableProvider provider = appContext.getBean(GtfsRealtimeProviderImpl.class);
-      this.setGtfsRealtimeProvider(provider);
-      _log.info("Spring configured with gtfsRealtimeProvider=" + this._gtfsRealtimeProvider);
-    }
-
-  }
   
   @PreDestroy
   public void stop() {
@@ -139,6 +119,7 @@ public class HamiltonToGtfsRealtimeService implements ServletContextAware {
   }
   
   // package private for unit tests
+  @SuppressWarnings("rawtypes")
   Map getConnectionProperties() {
     if (_url == null) {
       _log.error("testing mode:  URL not configured");
@@ -152,6 +133,7 @@ public class HamiltonToGtfsRealtimeService implements ServletContextAware {
   }
   
   // package private for unit tests
+  @SuppressWarnings("rawtypes")
   Connection getConnection(Map<String, String> properties) throws Exception {
     if (properties == null) return null;
     if (_dataSource == null) {
@@ -172,6 +154,7 @@ public class HamiltonToGtfsRealtimeService implements ServletContextAware {
       ConnectionFactory connectionFactory = new DriverManagerConnectionFactory(properties.get(DB_URL),
           properties.get(DB_USERNAME), properties.get(DB_PASSWORD));
       _log.info("building pool");
+      @SuppressWarnings("unused")
       PoolableConnectionFactory poolableConnectionFactory 
       = new PoolableConnectionFactory(connectionFactory, 
           connectionPool,
@@ -182,6 +165,7 @@ public class HamiltonToGtfsRealtimeService implements ServletContextAware {
       _log.info("building datasource");
       _dataSource = new PoolingDataSource(connectionPool);
       _log.info("loading driver");
+      @SuppressWarnings("unused")
       Class driverClass = Class.forName("com.mysql.jdbc.Driver");
     }
     Connection connection = _dataSource.getConnection(/*properties.get(DB_USERNAME), properties.get(DB_PASSWORD)*/);
@@ -243,6 +227,7 @@ public class HamiltonToGtfsRealtimeService implements ServletContextAware {
     
   }
   
+  @SuppressWarnings("unchecked")
   public void writeGtfsRealtimeOutput() throws Exception {
     Connection conn = null;
     try {
@@ -316,17 +301,8 @@ public class HamiltonToGtfsRealtimeService implements ServletContextAware {
     String shortTripId = tripId;
     
     shortTripId = shortTripId.replaceFirst("PAV_", "");
-//    shortTripId = shortTripId.replaceAll("GOBUS_", "");
     _log.debug("shortTripId=" + shortTripId);
     return shortTripId;
-  }
-
-  private String cleanRouteId(String routeId) {
-    if (routeId == null) return null;
-    String shortRouteId = routeId;
-    shortRouteId = shortRouteId.replaceAll("PAV_", "");
-//    shortRouteId = shortRouteId.replaceAll("I", "").replaceAll("O", "").replaceAll("AC", "A").replaceAll("C", "");
-    return shortRouteId;
   }
 
   
@@ -490,7 +466,10 @@ public class HamiltonToGtfsRealtimeService implements ServletContextAware {
       if (password != null) {
         _password = password;
       }
-
+      String exitOnDelay = context.getInitParameter("hamilton.exitOnDelay");
+      if (exitOnDelay != null && exitOnDelay.equalsIgnoreCase("true")) {
+        _exitOnDelay = true;
+      }
     }
   }
 
@@ -513,10 +492,14 @@ public class HamiltonToGtfsRealtimeService implements ServletContextAware {
 	  	    // if we've reached here, the connection to the database has hung
 		      // we assume a service-based configuration and simply exit
 		      // TODO adjust network/driver timeouts instead!
-		      _log.error("Connection hung with delay of " + hangTime + ".  Exiting!");
-		      System.exit(1);
+		      if (_exitOnDelay) {
+		        _log.error("Connection hung with delay of " + hangTime + ".  Exiting!");
+		        System.exit(1);
+		      } else {
+		        _log.error("Connection hung with delay of " + hangTime);
+		      }
 		    } else {
-		      _log.info("hangTime:" + hangTime);
+//		      _log.info("hangTime:" + hangTime);
 		    }
 		  }
 		}
