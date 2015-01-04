@@ -323,6 +323,7 @@ public class HamiltonToGtfsRealtimeService implements ServletContextAware {
       String stopId = record.getStopId();
       String routeId = record.getRouteId();
       String tripId = record.getTripId();
+      String blockId = record.getBlockId();
       
       if (record.isFrequency()) {
         /**
@@ -347,6 +348,7 @@ public class HamiltonToGtfsRealtimeService implements ServletContextAware {
        */
       TripDescriptor.Builder tripDescriptor = TripDescriptor.newBuilder();
       tripDescriptor.setTripId(cleanTripId(tripId));
+
       if (routeId != null) {
 //        tripDescriptor.setRouteId(routeId);
 //        tripDescriptor.setRouteId(cleanRouteId(routeId));

@@ -70,7 +70,7 @@ public class AVLTranslator {
   public VehicleRecord translate(DBAVLRecord record) {
    VehicleRecord v = new VehicleRecord();
     
-   TripStuff stuff = getTripStartingAt(record, System.currentTimeMillis());
+   TripMatch stuff = getTripStartingAt(record, System.currentTimeMillis());
    if (stuff == null) {
      return null;
    }
@@ -96,6 +96,7 @@ public class AVLTranslator {
     v.setLon(record.getLon());
     
     v.setTripId(tripId);
+    v.setBlockId(stuff.getBlockId());
     v.setRouteId(routeId);
     return v;
   }
@@ -120,14 +121,14 @@ public class AVLTranslator {
     return null;
   }
   
-  TripStuff getTripStartingAt(DBAVLRecord record, long currentTime) {
+  TripMatch getTripStartingAt(DBAVLRecord record, long currentTime) {
     return getTripStartingAt(currentTime, ""+record.getBusId(), record.getReportDate(), record.getLogonTripDate(), record.getLogonTrip(), record.getLogonRoute(), record.getLat(), record.getLon());
   }
   
   // package private for unit tests  
-  TripStuff getTripStartingAt(long currentTime, String id, Date reportDate, Date logonTripDate, String logonTrip, String logonRoute, Double lat, Double lon) {
+  TripMatch getTripStartingAt(long currentTime, String id, Date reportDate, Date logonTripDate, String logonTrip, String logonRoute, Double lat, Double lon) {
     
-    List<TripStuff> stuffs = new ArrayList<TripStuff>();
+    List<TripMatch> stuffs = new ArrayList<TripMatch>();
     
     // test age of record
     if (reportDate == null || logonTripDate == null)
@@ -163,7 +164,7 @@ public class AVLTranslator {
                 String logonDirection = this.getDirectionFromLogonRoute(logonRoute);
                 String tripDirection = this.getDirectionFromTripId(trip.getTrip().getId().toString());
                 if (logonDirection == null || logonDirection.equals(tripDirection)) {
-                  stuffs.add(new TripStuff(trip.getTrip().getId().toString(), false, null, logonRoute));
+                  stuffs.add(new TripMatch(trip.getTrip().getId().toString(), false, null, logonRoute, block.getBlock().getBlock().getId().toString()));
                 } else {
                   _log.error(id + " rejected as logonDirectin=" + logonDirection + " and tripDirection=" + tripDirection);
                 }
@@ -195,7 +196,7 @@ public class AVLTranslator {
               }
               if (frequencyStartTime == logonStartTime) {
                 String stopId = findNextStop(block, trip, lat, lon);
-                stuffs.add(new TripStuff(tripId, true, stopId, logonRoute));
+                stuffs.add(new TripMatch(tripId, true, stopId, logonRoute, block.getBlock().getBlock().getId().toString()));
               }
             }
           }
@@ -332,7 +333,7 @@ private String findNextStop(BlockInstance block, BlockTripEntry trip, double lat
     Date now = new Date(System.currentTimeMillis());
     Logon l = cache.get(pr.getId());
     if (l == null) return null;
-    TripStuff stuff = this.getTripStartingAt(currentTime, pr.getId(), now, now, l.getTime(), l.getRoute(), pr.getLat(), pr.getLon());
+    TripMatch stuff = this.getTripStartingAt(currentTime, pr.getId(), now, now, l.getTime(), l.getRoute(), pr.getLat(), pr.getLon());
     if (stuff == null) {
       _log.error("could not match " + pr.getId() + " to a trip");
     }
@@ -340,16 +341,18 @@ private String findNextStop(BlockInstance block, BlockTripEntry trip, double lat
     return vr;
   }
 
-  private static class TripStuff {
+  private static class TripMatch {
     private String tripId;
     private boolean isFrequency;
     private String stopId;
     private String routeId;
-    public TripStuff(String tripId, boolean isFrequency, String stopId, String routeId) {
+    private String blockId;
+    public TripMatch(String tripId, boolean isFrequency, String stopId, String routeId, String blockId) {
       this.tripId = tripId;
       this.isFrequency = isFrequency;
       this.stopId = stopId;
       this.routeId = routeId;
+      this.blockId = blockId;
     }
     public String getTripId() {
       return tripId;
@@ -359,6 +362,9 @@ private String findNextStop(BlockInstance block, BlockTripEntry trip, double lat
     }
     public String getStopId() {
       return stopId;
+    }
+    public String getBlockId() {
+      return blockId;
     }
     public String toString() {
       return "{" + tripId + "[" + routeId + "]" + "}";
