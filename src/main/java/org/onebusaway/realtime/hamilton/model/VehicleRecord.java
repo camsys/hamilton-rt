@@ -17,6 +17,7 @@ public class VehicleRecord {
   private String routeId;
   private String tripId;
   private String blockId;
+  private Integer scheduleDeviation;
   private boolean isFrequency;
   private ArrayList<StopTimeInfo> stopTimeInfos;
   
@@ -103,5 +104,11 @@ public class VehicleRecord {
   }
   public void setStopTimeInfos(ArrayList<StopTimeInfo> updates) {
     stopTimeInfos = updates;
+  }
+  public Integer getScheduleDeviation() {
+    return scheduleDeviation;
+  }
+  public void setScheduleDeviation(Integer scheduleDeviation) {
+    this.scheduleDeviation = scheduleDeviation;
   }
 }

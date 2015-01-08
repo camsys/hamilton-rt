@@ -3,13 +3,16 @@ package org.onebusaway.realtime.hamilton.tds;
 import java.sql.Date;
 import java.sql.Timestamp;
 import java.util.ArrayList;
+import java.util.Calendar;
 import java.util.List;
 import java.util.Map;
+import java.util.TimeZone;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import org.onebusaway.geospatial.model.CoordinatePoint;
 import org.onebusaway.geospatial.services.SphericalGeometryLibrary;
+import org.onebusaway.gtfs.model.AgencyAndId;
 import org.onebusaway.realtime.hamilton.model.DBAVLRecord;
 import org.onebusaway.realtime.hamilton.model.Logon;
 import org.onebusaway.realtime.hamilton.model.PositionReport;
@@ -25,8 +28,11 @@ import org.onebusaway.transit_data_federation.services.blocks.BlockCalendarServi
 import org.onebusaway.transit_data_federation.services.blocks.BlockGeospatialService;
 import org.onebusaway.transit_data_federation.services.blocks.BlockInstance;
 import org.onebusaway.transit_data_federation.services.blocks.ScheduledBlockLocation;
+import org.onebusaway.transit_data_federation.services.blocks.ScheduledBlockLocationService;
+import org.onebusaway.transit_data_federation.services.transit_graph.BlockStopTimeEntry;
 import org.onebusaway.transit_data_federation.services.transit_graph.BlockTripEntry;
 import org.onebusaway.transit_data_federation.services.transit_graph.FrequencyEntry;
+import org.onebusaway.transit_data_federation.services.transit_graph.StopEntry;
 import org.onebusaway.transit_data_federation.services.transit_graph.StopTimeEntry;
 import org.onebusaway.transit_data_federation.services.transit_graph.TripEntry;
 import org.slf4j.Logger;
@@ -43,7 +49,11 @@ public class AVLTranslator {
   private BlockCalendarService _blockCalendarService;  
   private TripBeanService _tripBeanService;
   private BlockGeospatialService _geospatialService;
-  
+  private ScheduledBlockLocationService _scheduledBlockLocationService;
+  @Autowired
+  public void setScheduledBlockLocationService(ScheduledBlockLocationService sbs) {
+    _scheduledBlockLocationService = sbs;
+  }
   @Autowired
   public void setBlockGeospatialService(BlockGeospatialService bgs) {
     _geospatialService = bgs;
@@ -98,6 +108,9 @@ public class AVLTranslator {
     v.setTripId(tripId);
     v.setBlockId(stuff.getBlockId());
     v.setRouteId(routeId);
+    
+    v.setScheduleDeviation(stuff.getScheduleDeviation());
+
     return v;
   }
   
@@ -164,7 +177,9 @@ public class AVLTranslator {
                 String logonDirection = this.getDirectionFromLogonRoute(logonRoute);
                 String tripDirection = this.getDirectionFromTripId(trip.getTrip().getId().toString());
                 if (logonDirection == null || logonDirection.equals(tripDirection)) {
-                  stuffs.add(new TripMatch(trip.getTrip().getId().toString(), false, null, logonRoute, block.getBlock().getBlock().getId().toString()));
+                  TripMatch tripMatch = new TripMatch(trip.getTrip().getId().toString(), false, null, logonRoute, block.getBlock().getBlock().getId().toString(), null);
+                  computeBlockLocationAndDeviation(tripMatch, trip, (int) (reportDate.getTime()/1000), lat ,lon); 
+                  stuffs.add(tripMatch);
                 } else {
                   _log.error(id + " rejected as logonDirectin=" + logonDirection + " and tripDirection=" + tripDirection);
                 }
@@ -196,7 +211,7 @@ public class AVLTranslator {
               }
               if (frequencyStartTime == logonStartTime) {
                 String stopId = findNextStop(block, trip, lat, lon);
-                stuffs.add(new TripMatch(tripId, true, stopId, logonRoute, block.getBlock().getBlock().getId().toString()));
+                stuffs.add(new TripMatch(tripId, true, stopId, logonRoute, block.getBlock().getBlock().getId().toString(), null));
               }
             }
           }
@@ -217,6 +232,67 @@ public class AVLTranslator {
   }
 
 
+  private Integer computeBlockLocationAndDeviation(TripMatch tripMatch, BlockTripEntry trip, int observationTimeInSeconds, Double lat, Double lon) {
+    double distanceAlongBlock = computeBlockLocation(tripMatch, trip, lat, lon);
+    ScheduledBlockLocation blockLocation = _scheduledBlockLocationService.getScheduledBlockLocationFromDistanceAlongBlock(trip.getBlockConfiguration(), distanceAlongBlock);
+    /*
+     * GtfsRealtime defines deviation as :
+     * int deviation = (int) ((record.getTimeOfRecord() - record.getServiceDate()) / 1000 - scheduledBlockLocation.getScheduledTime());
+     */
+    double observationTimeOffset = observationTimeInSeconds - this.getStartOfDayInMillis(null)/1000;
+    int scheduleDeviation = (int) (observationTimeOffset - blockLocation.getScheduledTime());
+    tripMatch.setScheduleDeviation(scheduleDeviation);
+    return  scheduleDeviation;
+  }
+
+  private Double computeBlockLocation(TripMatch tripMatch, BlockTripEntry trip, Double lat, Double lon) {
+  int stopCount = trip.getStopTimes().size();
+  Integer bestStopSeq = null;
+  Double closestStop = Double.MAX_VALUE;
+  String closestStopId = null;
+  for (int i =0 ; i < stopCount; i++) {
+      BlockStopTimeEntry blockStopTimeEntry = trip.getStopTimes().get(i);
+      StopEntry stop = blockStopTimeEntry.getStopTime().getStop();
+      double distanceAway = SphericalGeometryLibrary.distance(lat, lon, 
+          stop.getStopLat(), stop.getStopLon());
+      if (Math.abs(distanceAway) < closestStop) {
+        closestStop = Math.abs(distanceAway);
+        bestStopSeq = i;
+        closestStopId = stop.getId().toString();
+      }
+  }
+  if (bestStopSeq != null) {
+    tripMatch.setStopId(closestStopId);
+    BlockStopTimeEntry blockStopTimeEntry = trip.getStopTimes().get(bestStopSeq);
+    StopEntry stop = blockStopTimeEntry.getStopTime().getStop();
+    double distanceAway = SphericalGeometryLibrary.distance(lat, lon, 
+        stop.getStopLat(), stop.getStopLon());
+//    _log.error("trip " + trip.getTrip().getId() + " is " + distanceAway + "m away from stop");
+    return trip.getStopTimes().get(bestStopSeq).getDistanceAlongBlock();
+  }
+  return null;
+}
+  
+  private long getStartOfDayInMillis(String serviceDate) {
+    Calendar cal = Calendar.getInstance();
+    if (serviceDate != null) {
+    int year = Integer.parseInt(serviceDate.substring(0, 4));
+    int month = Integer.parseInt(serviceDate.substring(5,7)) - 1; // month is 0 based
+    int date = Integer.parseInt(serviceDate.substring(8,10));
+    //_log.debug("serviceDate=" + year + ", " + month + ", " + date);
+    cal.set(year, month, date);
+    }
+    cal.set(Calendar.HOUR, 0);
+    cal.set(Calendar.MINUTE, 0);
+    cal.set(Calendar.SECOND, 0);
+    cal.set(Calendar.MILLISECOND, 0);
+    cal.set(Calendar.AM_PM, Calendar.AM);
+    cal.setTimeZone(TimeZone.getTimeZone("Pacific/Auckland"));
+    long startOfDay = cal.getTimeInMillis();
+    //_log.debug("startOfDay=" + startOfDay + "(" + cal.getTime() + ")");
+    return startOfDay;
+}
+  
 private String getDirectionFromLogonRoute(String logonRoute) {
   if (logonRoute.endsWith("A"))
     return "O";
@@ -347,12 +423,15 @@ private String findNextStop(BlockInstance block, BlockTripEntry trip, double lat
     private String stopId;
     private String routeId;
     private String blockId;
-    public TripMatch(String tripId, boolean isFrequency, String stopId, String routeId, String blockId) {
+    private Integer scheduleDeviation;
+    
+    public TripMatch(String tripId, boolean isFrequency, String stopId, String routeId, String blockId, Integer scheduleDeviation) {
       this.tripId = tripId;
       this.isFrequency = isFrequency;
       this.stopId = stopId;
       this.routeId = routeId;
       this.blockId = blockId;
+      this.scheduleDeviation = scheduleDeviation;
     }
     public String getTripId() {
       return tripId;
@@ -363,11 +442,20 @@ private String findNextStop(BlockInstance block, BlockTripEntry trip, double lat
     public String getStopId() {
       return stopId;
     }
+    public void setStopId(String stopId) {
+      this.stopId = stopId;
+    }
     public String getBlockId() {
       return blockId;
     }
+    public Integer getScheduleDeviation() {
+      return scheduleDeviation;
+    }
+    public void setScheduleDeviation(Integer scheduleDeviation) {
+      this.scheduleDeviation = scheduleDeviation;
+    }
     public String toString() {
-      return "{" + tripId + "[" + routeId + "]" + "}";
+      return "{" + tripId + "[" + routeId + "](dev=" + scheduleDeviation + ")}";
     }
   }
 }

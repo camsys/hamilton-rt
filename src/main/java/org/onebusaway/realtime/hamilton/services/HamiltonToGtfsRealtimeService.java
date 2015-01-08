@@ -324,30 +324,31 @@ public class HamiltonToGtfsRealtimeService implements ServletContextAware {
       String routeId = record.getRouteId();
       String tripId = record.getTripId();
       String blockId = record.getBlockId();
+      Integer scheduleDeviation = record.getScheduleDeviation();
       
-      if (record.isFrequency()) {
-        /**
-         * StopTime Update
-         */
-        /**
-         * StopTime Event
-         */
-        StopTimeEvent.Builder arrival = StopTimeEvent.newBuilder();
-      
-        StopTimeUpdate.Builder stopTimeUpdate = StopTimeUpdate.newBuilder();
-      
-        stopTimeUpdate.setStopId(cleanStopId(stopId));
-        arrival.setTime(System.currentTimeMillis()/1000); // TODO HACK
-        arrival.setUncertainty(300);
-        stopTimeUpdate.setArrival(arrival);
-        stopTimeUpdateSet.add(stopTimeUpdate.build());
-      }
+
+      /**
+       * StopTime Event
+       */
+      StopTimeEvent.Builder arrival = StopTimeEvent.newBuilder();
+      /**
+       * StopTime Update
+       */
+
+      StopTimeUpdate.Builder stopTimeUpdate = StopTimeUpdate.newBuilder();
+      stopTimeUpdate.setStopId(cleanStopId(stopId));
+//      arrival.setTime(System.currentTimeMillis()/1000); // TODO HACK
+      arrival.setTime(record.getTime().getTime()/1000);
+      arrival.setUncertainty(300);
+      stopTimeUpdate.setArrival(arrival);
+      stopTimeUpdateSet.add(stopTimeUpdate.build());
 
       /**
        * Trip Descriptor
        */
       TripDescriptor.Builder tripDescriptor = TripDescriptor.newBuilder();
       tripDescriptor.setTripId(cleanTripId(tripId));
+      
 
       if (routeId != null) {
 //        tripDescriptor.setRouteId(routeId);
@@ -362,9 +363,7 @@ public class HamiltonToGtfsRealtimeService implements ServletContextAware {
       }
       
       TripUpdate.Builder tripUpdate = TripUpdate.newBuilder();
-      if (record.isFrequency()) {
-        tripUpdate.addAllStopTimeUpdate(stopTimeUpdateSet);
-      }
+      tripUpdate.addAllStopTimeUpdate(stopTimeUpdateSet);
 
 //      if (stopId != null) {
 //        OneBusAwayTripUpdate.Builder obaTripUpdate = OneBusAwayTripUpdate.newBuilder();
