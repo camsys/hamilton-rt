@@ -337,7 +337,6 @@ public class HamiltonToGtfsRealtimeService implements ServletContextAware {
 
       StopTimeUpdate.Builder stopTimeUpdate = StopTimeUpdate.newBuilder();
       stopTimeUpdate.setStopId(cleanStopId(stopId));
-//      arrival.setTime(System.currentTimeMillis()/1000); // TODO HACK
       arrival.setTime(record.getTime().getTime()/1000);
       arrival.setUncertainty(300);
       stopTimeUpdate.setArrival(arrival);

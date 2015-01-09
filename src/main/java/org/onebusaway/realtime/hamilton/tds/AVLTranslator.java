@@ -16,7 +16,9 @@ import org.onebusaway.gtfs.model.AgencyAndId;
 import org.onebusaway.realtime.hamilton.model.DBAVLRecord;
 import org.onebusaway.realtime.hamilton.model.Logon;
 import org.onebusaway.realtime.hamilton.model.PositionReport;
+import org.onebusaway.realtime.hamilton.model.TripMatch;
 import org.onebusaway.realtime.hamilton.model.VehicleRecord;
+import org.onebusaway.realtime.hamilton.services.VehicleLocationService;
 import org.onebusaway.transit_data.model.AgencyWithCoverageBean;
 import org.onebusaway.transit_data.model.ListBean;
 import org.onebusaway.transit_data.model.TripStopTimeBean;
@@ -50,6 +52,11 @@ public class AVLTranslator {
   private TripBeanService _tripBeanService;
   private BlockGeospatialService _geospatialService;
   private ScheduledBlockLocationService _scheduledBlockLocationService;
+  private VehicleLocationService _vehicleLocationService;
+  @Autowired
+  public void setVehicleLocationService(VehicleLocationService vls) {
+    _vehicleLocationService = vls;
+  }
   @Autowired
   public void setScheduledBlockLocationService(ScheduledBlockLocationService sbs) {
     _scheduledBlockLocationService = sbs;
@@ -178,7 +185,7 @@ public class AVLTranslator {
                 String tripDirection = this.getDirectionFromTripId(trip.getTrip().getId().toString());
                 if (logonDirection == null || logonDirection.equals(tripDirection)) {
                   TripMatch tripMatch = new TripMatch(trip.getTrip().getId().toString(), false, null, logonRoute, block.getBlock().getBlock().getId().toString(), null);
-                  computeBlockLocationAndDeviation(tripMatch, trip, (int) (reportDate.getTime()/1000), lat ,lon); 
+                  computeDistanceAlongBlock(tripMatch, id, trip, (int) (reportDate.getTime()/1000), lat ,lon); 
                   stuffs.add(tripMatch);
                 } else {
                   _log.error(id + " rejected as logonDirectin=" + logonDirection + " and tripDirection=" + tripDirection);
@@ -232,8 +239,8 @@ public class AVLTranslator {
   }
 
 
-  private Integer computeBlockLocationAndDeviation(TripMatch tripMatch, BlockTripEntry trip, int observationTimeInSeconds, Double lat, Double lon) {
-    double distanceAlongBlock = computeBlockLocation(tripMatch, trip, lat, lon);
+  private Integer computeDistanceAlongBlock(TripMatch tripMatch, String vehicleId, BlockTripEntry trip, int observationTimeInSeconds, Double lat, Double lon) {
+    double distanceAlongBlock = _vehicleLocationService.computeDistanceAlongBlock(tripMatch, vehicleId, trip, lat, lon);
     ScheduledBlockLocation blockLocation = _scheduledBlockLocationService.getScheduledBlockLocationFromDistanceAlongBlock(trip.getBlockConfiguration(), distanceAlongBlock);
     /*
      * GtfsRealtime defines deviation as :
@@ -245,33 +252,6 @@ public class AVLTranslator {
     return  scheduleDeviation;
   }
 
-  private Double computeBlockLocation(TripMatch tripMatch, BlockTripEntry trip, Double lat, Double lon) {
-  int stopCount = trip.getStopTimes().size();
-  Integer bestStopSeq = null;
-  Double closestStop = Double.MAX_VALUE;
-  String closestStopId = null;
-  for (int i =0 ; i < stopCount; i++) {
-      BlockStopTimeEntry blockStopTimeEntry = trip.getStopTimes().get(i);
-      StopEntry stop = blockStopTimeEntry.getStopTime().getStop();
-      double distanceAway = SphericalGeometryLibrary.distance(lat, lon, 
-          stop.getStopLat(), stop.getStopLon());
-      if (Math.abs(distanceAway) < closestStop) {
-        closestStop = Math.abs(distanceAway);
-        bestStopSeq = i;
-        closestStopId = stop.getId().toString();
-      }
-  }
-  if (bestStopSeq != null) {
-    tripMatch.setStopId(closestStopId);
-    BlockStopTimeEntry blockStopTimeEntry = trip.getStopTimes().get(bestStopSeq);
-    StopEntry stop = blockStopTimeEntry.getStopTime().getStop();
-    double distanceAway = SphericalGeometryLibrary.distance(lat, lon, 
-        stop.getStopLat(), stop.getStopLon());
-//    _log.error("trip " + trip.getTrip().getId() + " is " + distanceAway + "m away from stop");
-    return trip.getStopTimes().get(bestStopSeq).getDistanceAlongBlock();
-  }
-  return null;
-}
   
   private long getStartOfDayInMillis(String serviceDate) {
     Calendar cal = Calendar.getInstance();
@@ -417,45 +397,4 @@ private String findNextStop(BlockInstance block, BlockTripEntry trip, double lat
     return vr;
   }
 
-  private static class TripMatch {
-    private String tripId;
-    private boolean isFrequency;
-    private String stopId;
-    private String routeId;
-    private String blockId;
-    private Integer scheduleDeviation;
-    
-    public TripMatch(String tripId, boolean isFrequency, String stopId, String routeId, String blockId, Integer scheduleDeviation) {
-      this.tripId = tripId;
-      this.isFrequency = isFrequency;
-      this.stopId = stopId;
-      this.routeId = routeId;
-      this.blockId = blockId;
-      this.scheduleDeviation = scheduleDeviation;
-    }
-    public String getTripId() {
-      return tripId;
-    }
-    public boolean isFrequency() {
-      return isFrequency;
-    }
-    public String getStopId() {
-      return stopId;
-    }
-    public void setStopId(String stopId) {
-      this.stopId = stopId;
-    }
-    public String getBlockId() {
-      return blockId;
-    }
-    public Integer getScheduleDeviation() {
-      return scheduleDeviation;
-    }
-    public void setScheduleDeviation(Integer scheduleDeviation) {
-      this.scheduleDeviation = scheduleDeviation;
-    }
-    public String toString() {
-      return "{" + tripId + "[" + routeId + "](dev=" + scheduleDeviation + ")}";
-    }
-  }
 }
