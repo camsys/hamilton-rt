@@ -5,6 +5,6 @@ import org.onebusaway.transit_data_federation.services.transit_graph.BlockTripEn
 
 public interface VehicleLocationService {
 
-  Double computeDistanceAlongBlock(TripMatch tripMatch, String vehicleId, BlockTripEntry trip, Double lat, Double lon);
+  Double computeDistanceAlongBlock(String vehicleId, BlockTripEntry trip, Double lat, Double lon);
   
 }

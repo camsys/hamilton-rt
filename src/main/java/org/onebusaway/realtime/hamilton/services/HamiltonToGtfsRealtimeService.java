@@ -53,6 +53,9 @@ public class HamiltonToGtfsRealtimeService implements ServletContextAware {
   public static final String QUERY_STRING = "select ID as Id, BusID as busId, RptTime as reportTime, "
       + "LatDD as lat, LonDD as lon, LogonRoute as logonRoute, LogonTrip as logonTrip, "
       + "BusNum as busNumber, RptDate as reportDate from tblbuses;";
+//  public static final String QUERY_STRING = "select ID as Id, BusID as busId, RptTime as reportTime, "
+//      + "LatDD as lat, LonDD as lon, LogonRoute as logonRoute, LogonTrip as logonTrip, "
+//      + "BusNum as busNumber, RptDate as reportDate from tblbuses where BusID = 3191;";
   
   private final String TRIP_UPDATE_PREFIX = "trip_update_";
   private final String VEHICLE_POSITION_PREFIX = "vehicle_position_";
@@ -337,8 +340,19 @@ public class HamiltonToGtfsRealtimeService implements ServletContextAware {
 
       StopTimeUpdate.Builder stopTimeUpdate = StopTimeUpdate.newBuilder();
       stopTimeUpdate.setStopId(cleanStopId(stopId));
-      arrival.setTime(record.getTime().getTime()/1000);
-      arrival.setUncertainty(300);
+      if (record.getScheduleDeviation() != null) {
+        // this present some issues -- the TDS receiving this will advance the bus without an update
+        arrival.setDelay(record.getScheduleDeviation());
+      }
+      
+      
+      if (record.getNextStopTime() != null) {
+        _log.error("vehicle " + vehicleId + " at stop " + stopTimeUpdate.getStopId() + " at " + new java.util.Date(record.getNextStopTime()));
+        arrival.setTime(record.getNextStopTime()/1000);
+      } else {
+        arrival.setTime(record.getTime().getTime()/1000);
+      }
+//      arrival.setUncertainty(300);
       stopTimeUpdate.setArrival(arrival);
       stopTimeUpdateSet.add(stopTimeUpdate.build());
 
@@ -437,6 +451,9 @@ public class HamiltonToGtfsRealtimeService implements ServletContextAware {
       vehiclePosition.setPosition(position);
       vehiclePosition.setTrip(tripDescriptor);
       vehiclePosition.setVehicle(vehicleDescriptor);
+      vehiclePosition.setTimestamp(record.getTime().getTime()/1000);
+      vehiclePosition.setCurrentStopSequence(record.getSeq());
+      vehiclePosition.setStopId(record.getStopId());
 
       FeedEntity.Builder vehiclePositionEntity = FeedEntity.newBuilder();
       vehiclePositionEntity.setId(VEHICLE_POSITION_PREFIX+vehicleId);

@@ -20,6 +20,7 @@ public class VehicleRecord {
   private Integer scheduleDeviation;
   private boolean isFrequency;
   private ArrayList<StopTimeInfo> stopTimeInfos;
+  private Long nextStopTime;
   
   public String getVehicleId() {
     return vehicleId;
@@ -110,5 +111,11 @@ public class VehicleRecord {
   }
   public void setScheduleDeviation(Integer scheduleDeviation) {
     this.scheduleDeviation = scheduleDeviation;
+  }
+  public Long getNextStopTime() {
+    return nextStopTime;
+  }
+  public void setNextStopTime(Long nextStopTime) {
+    this.nextStopTime = nextStopTime;
   }
 }

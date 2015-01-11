@@ -29,7 +29,12 @@
 	<import resource="classpath:org/onebusaway/transit_data_federation/application-context.xml" />
 
 	<bean id="taskScheduler" class="org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler" />
-    <bean id="vehicleLocationService" class="org.onebusaway.realtime.hamilton.services.VehicleLocationServiceImpl" />
+	<bean id="shapePointHelperImpl" class="org.onebusaway.realtime.hamilton.services.ShapePointHelper" >
+		<property name="shapePointService" ref="shapePointServiceImpl" />
+	</bean>
+    <bean id="vehicleLocationService" class="org.onebusaway.realtime.hamilton.services.VehicleLocationServiceImpl" >
+    	<property name="shapePointHelper" ref="shapePointHelperImpl" />
+    </bean>
 	<bean id="avlTranslator" class="org.onebusaway.realtime.hamilton.tds.AVLTranslator" >
 		<property name="transitDataService" ref="transitDataServiceImpl" />
 		<property name="blockCalendarService" ref="blockCalendarServiceImpl" />

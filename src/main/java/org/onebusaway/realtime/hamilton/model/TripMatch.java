@@ -6,15 +6,17 @@ public class TripMatch {
   private String stopId;
   private String routeId;
   private String blockId;
+  private Integer nextStopOffset;
   private Integer scheduleDeviation;
+  private Integer stopSequence;
   
-  public TripMatch(String tripId, boolean isFrequency, String stopId, String routeId, String blockId, Integer scheduleDeviation) {
+  public TripMatch(String tripId, boolean isFrequency, String stopId, String routeId, String blockId, Integer nextStopOffset) {
     this.tripId = tripId;
     this.isFrequency = isFrequency;
     this.stopId = stopId;
     this.routeId = routeId;
     this.blockId = blockId;
-    this.scheduleDeviation = scheduleDeviation;
+    this.nextStopOffset = nextStopOffset;
   }
   public String getTripId() {
     return tripId;
@@ -31,14 +33,27 @@ public class TripMatch {
   public String getBlockId() {
     return blockId;
   }
+  public Integer getNextOffset() {
+    return nextStopOffset;
+  }
+  public void setNextStopOffset(Integer nextStopOffset) {
+    this.nextStopOffset = nextStopOffset;
+  }
+  public void setScheduleDeviation(Integer scheduleDeviation) {
+    this.scheduleDeviation = scheduleDeviation;  
+  }
   public Integer getScheduleDeviation() {
     return scheduleDeviation;
   }
-  public void setScheduleDeviation(Integer scheduleDeviation) {
-    this.scheduleDeviation = scheduleDeviation;
+  public void setStopSequence(Integer sequence) {
+    this.stopSequence = sequence;
+  }
+  public Integer getStopSequence() {
+    return stopSequence;
   }
   public String toString() {
-    return "{" + tripId + "[" + routeId + "](dev=" + scheduleDeviation + ")}";
+    return "{" + tripId + "[" + routeId + "](dev=" + nextStopOffset + ")}";
   }
+  
 }
 

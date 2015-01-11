@@ -19,12 +19,15 @@ import org.onebusaway.realtime.hamilton.model.PositionReport;
 import org.onebusaway.realtime.hamilton.model.TripMatch;
 import org.onebusaway.realtime.hamilton.model.VehicleRecord;
 import org.onebusaway.realtime.hamilton.services.VehicleLocationService;
+import org.onebusaway.realtime.api.VehicleLocationListener;
+import org.onebusaway.realtime.api.VehicleLocationRecord;
 import org.onebusaway.transit_data.model.AgencyWithCoverageBean;
 import org.onebusaway.transit_data.model.ListBean;
 import org.onebusaway.transit_data.model.TripStopTimeBean;
 import org.onebusaway.transit_data.model.trips.TripDetailsBean;
 import org.onebusaway.transit_data.model.trips.TripDetailsQueryBean;
 import org.onebusaway.transit_data.services.TransitDataService;
+import org.onebusaway.transit_data_federation.services.AgencyAndIdLibrary;
 import org.onebusaway.transit_data_federation.services.beans.TripBeanService;
 import org.onebusaway.transit_data_federation.services.blocks.BlockCalendarService;
 import org.onebusaway.transit_data_federation.services.blocks.BlockGeospatialService;
@@ -53,6 +56,13 @@ public class AVLTranslator {
   private BlockGeospatialService _geospatialService;
   private ScheduledBlockLocationService _scheduledBlockLocationService;
   private VehicleLocationService _vehicleLocationService;
+  private VehicleLocationListener _vehicleLocationListener;
+  @Autowired
+  public void setVehicleLocationListener(VehicleLocationListener vll) {
+    _vehicleLocationListener = vll;
+  }
+
+
   @Autowired
   public void setVehicleLocationService(VehicleLocationService vls) {
     _vehicleLocationService = vls;
@@ -102,7 +112,13 @@ public class AVLTranslator {
    } else {
      v.setStopId(stuff.getStopId());
    }
+   if (stuff.getStopSequence() != null) {
+     v.setSeq(stuff.getStopSequence());
+   }
    v.setFrequency(isFrequency);
+   if (stuff.getNextOffset() != null) {
+     v.setNextStopTime(this.getStartOfDayInMillis(null) + stuff.getNextOffset()*1000);
+   }
    
    String routeId = tripId.split("_")[2];  
     v.setVehicleId("" + record.getBusId());
@@ -115,7 +131,12 @@ public class AVLTranslator {
     v.setTripId(tripId);
     v.setBlockId(stuff.getBlockId());
     v.setRouteId(routeId);
-    
+    _log.error("startOfDay=" + this.getStartOfDayInMillis(null) +  ", next offset=" + stuff.getNextOffset());
+//    if (stuff.getNextOffset() != null) {
+//      v.setTime(new Timestamp(this.getStartOfDayInMillis(null) + stuff.getNextOffset()*1000));
+//    } else {
+//      v.setTime(new Timestamp(record.getReportDate().getTime())); // this is for frequency based stuff
+//    }
     v.setScheduleDeviation(stuff.getScheduleDeviation());
 
     return v;
@@ -240,18 +261,38 @@ public class AVLTranslator {
 
 
   private Integer computeDistanceAlongBlock(TripMatch tripMatch, String vehicleId, BlockTripEntry trip, int observationTimeInSeconds, Double lat, Double lon) {
-    double distanceAlongBlock = _vehicleLocationService.computeDistanceAlongBlock(tripMatch, vehicleId, trip, lat, lon);
+    Double distanceAlongBlock = _vehicleLocationService.computeDistanceAlongBlock(vehicleId, trip, lat, lon);
+    if (distanceAlongBlock == null) return null;
     ScheduledBlockLocation blockLocation = _scheduledBlockLocationService.getScheduledBlockLocationFromDistanceAlongBlock(trip.getBlockConfiguration(), distanceAlongBlock);
+    if (blockLocation == null) return null;
+    if (blockLocation.getNextStop() == null) return null;
+    tripMatch.setStopId(blockLocation.getNextStop().getStopTime().getStop().getId().toString());
+    tripMatch.setStopSequence(blockLocation.getClosestStop().getStopTime().getSequence());
+    tripMatch.setNextStopOffset(blockLocation.getNextStop().getStopTime().getArrivalTime());
+    
     /*
      * GtfsRealtime defines deviation as :
      * int deviation = (int) ((record.getTimeOfRecord() - record.getServiceDate()) / 1000 - scheduledBlockLocation.getScheduledTime());
      */
     double observationTimeOffset = observationTimeInSeconds - this.getStartOfDayInMillis(null)/1000;
     int scheduleDeviation = (int) (observationTimeOffset - blockLocation.getScheduledTime());
+    _log.info("dev for trip " + trip.getTrip().getId() + "=" + scheduleDeviation);
+    
+    // now that we've found a match, add it to the tds so it will be cached for the next search
+    handleVehicleUpdate(tripMatch, vehicleId, observationTimeInSeconds*1000,lat, lon);
     tripMatch.setScheduleDeviation(scheduleDeviation);
     return  scheduleDeviation;
   }
 
+  
+  private void handleVehicleUpdate(TripMatch tripMatch, String vehicleId, long timeOfRecord, Double lat, Double lon) {
+    VehicleLocationRecord record = new VehicleLocationRecord();
+    AgencyAndId tripId = AgencyAndIdLibrary.convertFromString(tripMatch.getTripId());
+    record.setVehicleId(new AgencyAndId(tripId.getAgencyId(), vehicleId));
+    record.setTripId(tripId);
+    record.setTimeOfRecord(timeOfRecord);
+    _vehicleLocationListener.handleVehicleLocationRecord(record);
+  }
   
   private long getStartOfDayInMillis(String serviceDate) {
     Calendar cal = Calendar.getInstance();
